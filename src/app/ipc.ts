@@ -55,7 +55,8 @@ export const IPC_EVENTS = {
 export async function spawnNoteWindow(payload: SpawnNotePayload): Promise<void> {
   console.log('[IPC] spawnNoteWindow called with:', payload);
   try {
-    // Ensure label normalization is handled in Rust; send id as-is
+    const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
+    console.log('[IPC] spawnNoteWindow using CSS coords', { css: payload.rect, dpr });
     await invoke('spawn_note_window', payload);
     console.log('[IPC] spawnNoteWindow completed for:', payload.id);
   } catch (error) {
@@ -107,6 +108,13 @@ export async function loadLayout(): Promise<BoardState | null> {
     console.error('Failed to load layout:', error);
     return null;
   }
+}
+
+// Move OS window to a CSS position (converted to physical pixels)
+export async function setNotePosition(rawId: string, cssX: number, cssY: number): Promise<void> {
+  const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
+  console.log('[IPC] setNotePosition using CSS coords', { id: rawId, css: { x: cssX, y: cssY }, dpr });
+  await invoke('set_note_position', { id: rawId, x: cssX, y: cssY });
 }
 
 // ============================================================================

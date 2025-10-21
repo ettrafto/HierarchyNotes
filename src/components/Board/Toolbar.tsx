@@ -1,6 +1,6 @@
 // Toolbar component - mode and style controls
 
-import { MousePointer2, Link2, Grid3x3, Minus } from 'lucide-react';
+import { MousePointer2, Link2, Grid3x3, Minus, Menu } from 'lucide-react';
 import { useBoardStore } from '../../app/store';
 
 export default function Toolbar() {
@@ -8,10 +8,18 @@ export default function Toolbar() {
   const setMode = useBoardStore((state) => state.setMode);
   const toggleSnapToGrid = useBoardStore((state) => state.toggleSnapToGrid);
   const setConnectStyle = useBoardStore((state) => state.setConnectStyle);
+  const toggleSidebar = useBoardStore((state) => state.toggleSidebar);
 
   return (
     <div className="toolbar glass-effect">
       <div className="flex items-center gap-2">
+        <button
+          onClick={toggleSidebar}
+          className="toolbar-button"
+          title="Toggle notes list"
+        >
+          <Menu size={16} />
+        </button>
         <span className="text-sm font-medium text-muted-foreground">Mode:</span>
         
         <button

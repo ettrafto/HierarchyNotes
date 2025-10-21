@@ -17,6 +17,7 @@ export type NoteWindow = {
   z: number;
   color?: string;         // muted accent color
   isOpen: boolean;        // whether native window exists
+  hidden?: boolean;       // board visibility toggle
 };
 
 export type Link = {
@@ -38,6 +39,12 @@ export type UIState = {
   selectedLinkIds: ID[];
   gridDensity: number;            // in pixels
   focusedNoteId?: ID | null;
+  trash?: {
+    lastDeleted?: {
+      note: NoteWindow; // store full note for restoration
+      deletedAt: number;
+    };
+  };
 };
 
 export type BoardState = {
@@ -110,6 +117,15 @@ export function nextZ(notes: NoteWindow[]): number {
   const maxZ = Math.max(0, ...notes.map((n) => n.z ?? 0));
   return maxZ + 1;
 }
+
+// Generic Note type (board-facing) compatible with NoteWindow
+export type Note = {
+  id: ID;
+  title: string;
+  color?: string;
+  window?: { isOpen: boolean };
+  // Other fields like rect/z may exist on NoteWindow
+};
 
 // Geometry types
 export type Point = {

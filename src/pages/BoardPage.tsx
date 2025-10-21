@@ -15,11 +15,14 @@ import {
 } from '../app/ipc';
 import Grid from '../components/Board/Grid';
 import LinkLayer from '../components/Board/LinkLayer';
+import NoteGhosts from '../components/Board/NoteGhosts';
 import Topbar from '../components/Board/Topbar';
 import Toolbar from '../components/Board/Toolbar';
 import Inspector from '../components/Board/Inspector';
 import AutoSaveToast from '../components/Toasts/AutoSaveToast';
 import type { NoteWindow } from '../lib/types';
+import NotesList from '../components/Board/NotesList';
+import { currentMonitor } from '@tauri-apps/api/window';
 
 export default function BoardPage() {
   const initializeFromState = useBoardStore((state) => state.initializeFromState);
@@ -29,11 +32,38 @@ export default function BoardPage() {
   const bringNoteToFront = useBoardStore((state) => state.bringNoteToFront);
   const openNoteWindow = useBoardStore((state) => state.openNoteWindow);
   const notes = useBoardStore((state) => state.notes);
+  const sidebarCollapsed = useBoardStore((state) => state.ui.sidebarCollapsed);
   const allNotesArray = Object.values(notes);
 
   // Autosave toast state
   const [persistStatus, setPersistStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
   const [toastMessage, setToastMessage] = useState<string>('');
+
+  // Screen scaling (proportional board)
+  const [scale, setScale] = useState<{ factor: number; width: number; height: number }>({ factor: 1, width: 0, height: 0 });
+  useEffect(() => {
+    (async () => {
+      try {
+        const monitor = await currentMonitor();
+        if (!monitor) return;
+        const { width, height } = monitor.size;
+        const dpr = window.devicePixelRatio || 1;
+        const screenWidth = width / dpr;
+        const screenHeight = height / dpr;
+        const boardWidth = window.innerWidth;
+        const boardHeight = window.innerHeight;
+        const scaleX = boardWidth / screenWidth;
+        const scaleY = boardHeight / screenHeight;
+        const factor = Math.min(scaleX, scaleY);
+        setScale({ factor, width: screenWidth, height: screenHeight });
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[BoardPage] useScreenScale', { screenWidth, screenHeight, boardWidth, boardHeight, factor });
+        }
+      } catch (e) {
+        console.warn('[BoardPage] currentMonitor failed', e);
+      }
+    })();
+  }, []);
 
   // Helper: wait for note:ready(id)
   function waitForNoteReady(id: string, ms: number): Promise<void> {
@@ -74,23 +104,7 @@ export default function BoardPage() {
         });
         
         store.initializeFromState(savedState);
-
-        // Open all notes to ensure visibility on launch
-        for (const note of Object.values(savedState.notes)) {
-          console.log('[BoardPage] Opening note window:', note.id);
-          await store.openNoteWindow(note.id);
-          try {
-            await waitForNoteReady(note.id, 2000);
-          } catch (e) {
-            // retry once
-            await store.openNoteWindow(note.id);
-            await waitForNoteReady(note.id, 2000);
-          }
-          const n = useBoardStore.getState().notes[note.id];
-          if (n) {
-            emitNoteHydrate({ id: note.id, title: n.title, content: n.content, color: n.color });
-          }
-        }
+        // Do not auto-open on boot in this pass
       } else {
         // First run - create sample data
         console.log('[BoardPage] No saved state, creating sample data');
@@ -98,22 +112,7 @@ export default function BoardPage() {
         console.log('[BoardPage] Sample data created with', Object.keys(sampleData.notes).length, 'notes');
         store.initializeFromState(sampleData);
         await saveBoardState(sampleData);
-
-        // Open all sample notes
-        for (const note of Object.values(sampleData.notes)) {
-          console.log('[BoardPage] Opening note window:', note.id);
-          await store.openNoteWindow(note.id);
-          try {
-            await waitForNoteReady(note.id, 2000);
-          } catch (e) {
-            await store.openNoteWindow(note.id);
-            await waitForNoteReady(note.id, 2000);
-          }
-          const n = useBoardStore.getState().notes[note.id];
-          if (n) {
-            emitNoteHydrate({ id: note.id, title: n.title, content: n.content, color: n.color });
-          }
-        }
+        // Do not auto-open on first run in this pass
       }
       console.log('[BoardPage] Initialization complete');
     };
@@ -129,10 +128,19 @@ export default function BoardPage() {
 
     const setupListeners = async () => {
       listeners.push(await onNoteMoved((event) => {
+        if (process.env.NODE_ENV !== 'production') {
+          const dpr = window.devicePixelRatio || 1;
+          console.log('[BoardPage] onNoteMoved', event, 'store keys=', Object.keys(useBoardStore.getState().notes), 'dpr=', dpr);
+        }
+        // Use label id directly; store uses 'note-<id>' keys
         updateNoteRect(event.id, event.rect);
       }));
 
       listeners.push(await onNoteResized((event) => {
+        if (process.env.NODE_ENV !== 'production') {
+          const dpr = window.devicePixelRatio || 1;
+          console.log('[BoardPage] onNoteResized', event, 'store keys=', Object.keys(useBoardStore.getState().notes), 'dpr=', dpr);
+        }
         updateNoteRect(event.id, event.rect);
       }));
 
@@ -141,7 +149,7 @@ export default function BoardPage() {
       }));
 
       listeners.push(await onNoteClosed((event) => {
-        setNoteOpen(event.id, false);
+        useBoardStore.getState().markNoteClosedFromOS(event.id);
       }));
 
       listeners.push(await onNoteContentChanged((event) => {
@@ -214,18 +222,6 @@ export default function BoardPage() {
 
     initializeFromState(sampleData);
     await saveBoardState(sampleData);
-
-    // Open all sample notes
-    for (const note of Object.values(sampleData.notes)) {
-      await openNoteWindow(note.id);
-      try {
-        await waitForNoteReady(note.id, 2000);
-      } catch (e) {
-        await openNoteWindow(note.id);
-        await waitForNoteReady(note.id, 2000);
-      }
-      emitNoteHydrate({ id: note.id, title: note.title, content: note.content, color: note.color });
-    }
   };
 
   return (
@@ -233,21 +229,39 @@ export default function BoardPage() {
       <Topbar onResetLayout={handleResetLayout} />
       <Toolbar />
       
-      <div className="relative flex-1 overflow-hidden">
-        <AutoSaveToast status={persistStatus} message={toastMessage} onHide={() => setPersistStatus('idle')} />
-        <Grid />
-        <LinkLayer />
-        <Inspector />
-
-        {/* Empty state */}
-        {allNotesArray.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center opacity-70">
-              <div className="text-lg font-semibold">No notes yet</div>
-              <div className="text-sm text-muted-foreground">Click "New Note" or use the Reset button to seed a sample layout.</div>
-            </div>
-          </div>
+      <div className="flex flex-1 overflow-hidden">
+        {!sidebarCollapsed && (
+          <aside className="relative z-20">
+            <NotesList />
+          </aside>
         )}
+        <main className="relative flex-1 overflow-hidden flex items-center justify-center bg-neutral-900">
+          <AutoSaveToast status={persistStatus} message={toastMessage} onHide={() => setPersistStatus('idle')} />
+          <div
+            className="relative"
+            style={{
+              width: scale.width * scale.factor,
+              height: scale.height * scale.factor,
+              transformOrigin: 'top left',
+              backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)',
+              backgroundSize: '20px 20px',
+            }}
+          >
+            <Grid />
+            <NoteGhosts scale={scale.factor} />
+            <LinkLayer />
+            <Inspector />
+            {/* Empty state */}
+            {allNotesArray.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="text-center opacity-70">
+                  <div className="text-lg font-semibold">No notes yet</div>
+                  <div className="text-sm text-muted-foreground">Click "New Note" or use the Reset button to seed a sample layout.</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
       </div>
     </div>
   );

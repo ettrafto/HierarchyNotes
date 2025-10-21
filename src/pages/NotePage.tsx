@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { emit as tauriEmit } from '@tauri-apps/api/event';
 import {
   onNoteHydrate,
   emitNoteMoved,
@@ -78,25 +79,35 @@ export default function NotePage() {
       try {
         const position = await windowRef.current.outerPosition();
         const size = await windowRef.current.outerSize();
+        const dpr = window.devicePixelRatio || 1;
         const currentRect: NoteRect = {
-          x: position.x,
-          y: position.y,
-          width: size.width,
-          height: size.height,
+          x: Math.round(position.x / dpr),
+          y: Math.round(position.y / dpr),
+          width: Math.round(size.width / dpr),
+          height: Math.round(size.height / dpr),
         };
         let changed = false;
         if (!lastRect || lastRect.x !== currentRect.x || lastRect.y !== currentRect.y) {
-          emitNoteMoved({ id: storeId, rect: currentRect });
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[NotePage] emit note:moved', { id: storeId, rect: currentRect, dpr, raw: { position, size } });
+          }
+          tauriEmit('note:moved', { id: storeId, rect: currentRect });
           changed = true;
         }
         if (!lastRect || lastRect.width !== currentRect.width || lastRect.height !== currentRect.height) {
-          emitNoteResized({ id: storeId, rect: currentRect });
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[NotePage] emit note:resized', { id: storeId, rect: currentRect, dpr, raw: { position, size } });
+          }
+          tauriEmit('note:resized', { id: storeId, rect: currentRect });
           changed = true;
+        }
+        if (changed && process.env.NODE_ENV !== 'production') {
+          console.log('[NotePage] rect changed', { prev: lastRect, next: currentRect });
         }
         lastRect = currentRect;
         return changed;
       } catch (error) {
-        console.error('Error checking window position:', error);
+        console.error('[NotePage] Error checking window position:', error);
         return false;
       }
     };
@@ -123,12 +134,7 @@ export default function NotePage() {
     window.addEventListener('focus', handleFocus);
     window.addEventListener('blur', handleBlur);
 
-    // Handle window close
-    const handleBeforeUnload = () => {
-      emitNoteClosed({ id: storeId });
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    // Do not emit note:closed on beforeunload; rely on Rust Destroyed event to avoid false closes during HMR
 
     return () => {
       if (unlisten) unlisten();
@@ -138,7 +144,7 @@ export default function NotePage() {
       if (adaptiveTimer.current) window.clearTimeout(adaptiveTimer.current);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // no beforeunload handler
     };
   }, []);
 
