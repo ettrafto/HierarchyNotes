@@ -55,6 +55,7 @@ export const useBoardStore = create<BoardStoreState>()(
       selectedNoteIds: [],
       selectedLinkIds: [],
       gridDensity: 40,
+      focusedNoteId: null,
     },
 
     // Note actions
@@ -195,10 +196,16 @@ export const useBoardStore = create<BoardStoreState>()(
       const note = get().notes[id];
       if (!note) return;
 
-      const maxZ = Math.max(...Object.values(get().notes).map((n) => n.z));
+      const maxZ = Math.max(0, ...Object.values(get().notes).map((n) => n.z ?? 0));
       if (note.z < maxZ) {
         set((state) => {
           state.notes[id].z = maxZ + 1;
+          state.ui.focusedNoteId = id;
+        });
+        debouncedPersist(get());
+      } else {
+        set((state) => {
+          state.ui.focusedNoteId = id;
         });
         debouncedPersist(get());
       }

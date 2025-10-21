@@ -1,9 +1,10 @@
 // Topbar component - main navigation and controls
 
-import { Plus, Search, Moon, Sun, RotateCcw } from 'lucide-react';
+import { Plus, Search, Moon, Sun, RotateCcw, Save } from 'lucide-react';
 import { useBoardStore } from '../../app/store';
 import { useState } from 'react';
 import { toggleTheme, getTheme } from '../../app/theme';
+import { saveBoardState } from '../../app/persistence';
 
 interface TopbarProps {
   onResetLayout: () => void;
@@ -51,6 +52,15 @@ export default function Topbar({ onResetLayout }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          onClick={() => saveBoardState(useBoardStore.getState())}
+          className="toolbar-button flex items-center gap-2"
+          title="Save Now"
+        >
+          <Save size={16} />
+          <span>Save Now</span>
+        </button>
+
         <button
           onClick={onResetLayout}
           className="toolbar-button flex items-center gap-2"

@@ -15,6 +15,7 @@ import type {
   NoteClosedEvent,
   NoteContentChangedEvent,
   NoteHydrateEvent,
+  NoteReadyPayload,
 } from '../lib/types';
 
 // Event channel names
@@ -33,6 +34,7 @@ export const IPC_EVENTS = {
   NOTE_BLURRED: 'note:blurred',
   NOTE_CLOSED: 'note:closed',
   NOTE_CONTENT_CHANGED: 'note:content_changed',
+  NOTE_READY: 'note:ready',
 
   // Board -> Note
   NOTE_HYDRATE: 'note:hydrate',
@@ -40,6 +42,10 @@ export const IPC_EVENTS = {
 
   // Note -> Board (request hydration)
   NOTE_REQUEST_HYDRATE: 'note:request_hydrate',
+
+  // Frontend-only persistence notifications
+  PERSIST_OK: 'persist:ok',
+  PERSIST_FAIL: 'persist:fail',
 } as const;
 
 // ============================================================================
@@ -135,6 +141,10 @@ export function onNoteContentChanged(
   );
 }
 
+export function onNoteReady(handler: (event: NoteReadyPayload) => void): Promise<UnlistenFn> {
+  return listen<NoteReadyPayload>(IPC_EVENTS.NOTE_READY, (e) => handler(e.payload));
+}
+
 // ============================================================================
 // Event emitters (Note side)
 // ============================================================================
@@ -163,6 +173,10 @@ export function emitNoteContentChanged(payload: NoteContentChangedEvent): void {
   tauriEmit(IPC_EVENTS.NOTE_CONTENT_CHANGED, payload);
 }
 
+export function emitNoteReady(payload: NoteReadyPayload): void {
+  tauriEmit(IPC_EVENTS.NOTE_READY, payload);
+}
+
 // ============================================================================
 // Note window listeners
 // ============================================================================
@@ -184,5 +198,25 @@ export function onNoteRequestHydrate(
 
 export function emitNoteRequestHydrate(payload: { id: string }): void {
   tauriEmit(IPC_EVENTS.NOTE_REQUEST_HYDRATE, payload);
+}
+
+// ============================================================================
+// Persistence frontend notifications
+// ============================================================================
+
+export function onPersistOk(handler: () => void): Promise<UnlistenFn> {
+  return listen<void>(IPC_EVENTS.PERSIST_OK, () => handler());
+}
+
+export function onPersistFail(handler: (error?: string) => void): Promise<UnlistenFn> {
+  return listen<string | undefined>(IPC_EVENTS.PERSIST_FAIL, (e) => handler(e.payload));
+}
+
+export function emitPersistOk(): void {
+  tauriEmit(IPC_EVENTS.PERSIST_OK);
+}
+
+export function emitPersistFail(error?: string): void {
+  tauriEmit(IPC_EVENTS.PERSIST_FAIL, error);
 }
 

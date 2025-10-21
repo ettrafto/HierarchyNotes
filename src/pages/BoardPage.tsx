@@ -1,6 +1,6 @@
 // BoardPage - main board view with grid and link layer
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useBoardStore } from '../app/store';
 import { loadBoardState, saveBoardState, createSampleData } from '../app/persistence';
 import {
@@ -11,12 +11,15 @@ import {
   onNoteContentChanged,
   emitNoteHydrate,
   onNoteRequestHydrate,
+  onNoteReady,
 } from '../app/ipc';
 import Grid from '../components/Board/Grid';
 import LinkLayer from '../components/Board/LinkLayer';
 import Topbar from '../components/Board/Topbar';
 import Toolbar from '../components/Board/Toolbar';
 import Inspector from '../components/Board/Inspector';
+import AutoSaveToast from '../components/Toasts/AutoSaveToast';
+import type { NoteWindow } from '../lib/types';
 
 export default function BoardPage() {
   const initializeFromState = useBoardStore((state) => state.initializeFromState);
@@ -27,6 +30,30 @@ export default function BoardPage() {
   const openNoteWindow = useBoardStore((state) => state.openNoteWindow);
   const notes = useBoardStore((state) => state.notes);
   const allNotesArray = Object.values(notes);
+
+  // Autosave toast state
+  const [persistStatus, setPersistStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
+  const [toastMessage, setToastMessage] = useState<string>('');
+
+  // Helper: wait for note:ready(id)
+  function waitForNoteReady(id: string, ms: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let unlisten: (() => void) | null = null;
+      const timer = window.setTimeout(() => {
+        if (unlisten) unlisten();
+        reject(new Error('note:ready timeout'));
+      }, ms);
+      onNoteReady(({ id: got }) => {
+        if (got === id) {
+          window.clearTimeout(timer);
+          if (unlisten) unlisten();
+          resolve();
+        }
+      }).then((off) => {
+        unlisten = off;
+      });
+    });
+  }
 
   // Initialize board state on mount (only once)
   useEffect(() => {
@@ -52,7 +79,17 @@ export default function BoardPage() {
         for (const note of Object.values(savedState.notes)) {
           console.log('[BoardPage] Opening note window:', note.id);
           await store.openNoteWindow(note.id);
-          // Hydration will be triggered when note window requests it
+          try {
+            await waitForNoteReady(note.id, 2000);
+          } catch (e) {
+            // retry once
+            await store.openNoteWindow(note.id);
+            await waitForNoteReady(note.id, 2000);
+          }
+          const n = useBoardStore.getState().notes[note.id];
+          if (n) {
+            emitNoteHydrate({ id: note.id, title: n.title, content: n.content, color: n.color });
+          }
         }
       } else {
         // First run - create sample data
@@ -66,7 +103,16 @@ export default function BoardPage() {
         for (const note of Object.values(sampleData.notes)) {
           console.log('[BoardPage] Opening note window:', note.id);
           await store.openNoteWindow(note.id);
-          // Hydration will be triggered on request
+          try {
+            await waitForNoteReady(note.id, 2000);
+          } catch (e) {
+            await store.openNoteWindow(note.id);
+            await waitForNoteReady(note.id, 2000);
+          }
+          const n = useBoardStore.getState().notes[note.id];
+          if (n) {
+            emitNoteHydrate({ id: note.id, title: n.title, content: n.content, color: n.color });
+          }
         }
       }
       console.log('[BoardPage] Initialization complete');
@@ -108,16 +154,10 @@ export default function BoardPage() {
       // Respond to hydration request from a note window
       listeners.push(
         await onNoteRequestHydrate(({ id }) => {
-          // id from NOTE is the store key (label-form 'note-<rawId>')
           const state = useBoardStore.getState();
-          const labelId = id;
-          const rawId = labelId.startsWith('note-') ? labelId.replace(/^note-/, '') : labelId;
-          const n = state.notes[rawId] || state.notes[labelId];
-          console.log('[BoardPage] note:request_hydrate', { id: labelId, rawId, found: !!n });
+          const n = state.notes[id] || state.notes[id.replace(/^note-/, '')];
           if (!n) return;
-          const payload = { id: labelId, title: n.title, content: n.content, color: n.color };
-          console.log('[BoardPage] note:hydrate =>', payload);
-          emitNoteHydrate(payload);
+          emitNoteHydrate({ id, title: n.title, content: n.content, color: n.color });
         })
       );
     };
@@ -178,15 +218,13 @@ export default function BoardPage() {
     // Open all sample notes
     for (const note of Object.values(sampleData.notes)) {
       await openNoteWindow(note.id);
-      
-      setTimeout(() => {
-        emitNoteHydrate({
-          id: note.id,
-          title: note.title,
-          content: note.content,
-          color: note.color,
-        });
-      }, 100);
+      try {
+        await waitForNoteReady(note.id, 2000);
+      } catch (e) {
+        await openNoteWindow(note.id);
+        await waitForNoteReady(note.id, 2000);
+      }
+      emitNoteHydrate({ id: note.id, title: note.title, content: note.content, color: note.color });
     }
   };
 
@@ -196,6 +234,7 @@ export default function BoardPage() {
       <Toolbar />
       
       <div className="relative flex-1 overflow-hidden">
+        <AutoSaveToast status={persistStatus} message={toastMessage} onHide={() => setPersistStatus('idle')} />
         <Grid />
         <LinkLayer />
         <Inspector />

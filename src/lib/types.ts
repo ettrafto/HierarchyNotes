@@ -37,6 +37,7 @@ export type UIState = {
   selectedNoteIds: ID[];
   selectedLinkIds: ID[];
   gridDensity: number;            // in pixels
+  focusedNoteId?: ID | null;
 };
 
 export type BoardState = {
@@ -97,6 +98,18 @@ export type NoteHydrateEvent = {
   content: string;
   color?: string;
 };
+
+// Handshake readiness from Note → Board
+export type NoteReadyPayload = {
+  id: ID; // the label id used by Board/IPC
+};
+
+// Utilities for tests
+export function nextZ(notes: NoteWindow[]): number {
+  if (!notes || notes.length === 0) return 1;
+  const maxZ = Math.max(0, ...notes.map((n) => n.z ?? 0));
+  return maxZ + 1;
+}
 
 // Geometry types
 export type Point = {

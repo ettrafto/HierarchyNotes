@@ -2,6 +2,7 @@
 
 import type { BoardState } from '../lib/types';
 import { loadLayout, persistLayout } from './ipc';
+import { emitPersistOk, emitPersistFail } from './ipc';
 
 /**
  * Load the board state from disk via Rust backend
@@ -9,7 +10,23 @@ import { loadLayout, persistLayout } from './ipc';
 export async function loadBoardState(): Promise<BoardState | null> {
   try {
     const state = await loadLayout();
-    return state;
+    if (!state) return null;
+    // Backward-compatible defaults: ensure z and focusedNoteId
+    const notes = state.notes || {};
+    const noteArray = Object.values(notes);
+    if (noteArray.length > 0) {
+      // Assign default z if missing based on index order
+      noteArray.forEach((n, idx) => {
+        if (typeof n.z !== 'number') n.z = idx + 1;
+      });
+      // Focused note default: highest z
+      if (!state.ui) state.ui = {} as any;
+      if (state.ui && (state.ui as any).focusedNoteId === undefined) {
+        const top = noteArray.reduce((acc, n) => (n.z > acc.z ? n : acc), noteArray[0]);
+        (state.ui as any).focusedNoteId = top?.id ?? null;
+      }
+    }
+    return state as BoardState;
   } catch (error) {
     console.error('Failed to load board state:', error);
     return null;
@@ -22,8 +39,10 @@ export async function loadBoardState(): Promise<BoardState | null> {
 export async function saveBoardState(boardState: BoardState): Promise<void> {
   try {
     await persistLayout({ boardState });
+    emitPersistOk();
   } catch (error) {
     console.error('Failed to save board state:', error);
+    emitPersistFail((error as Error)?.message);
   }
 }
 

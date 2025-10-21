@@ -10,6 +10,7 @@ import {
   emitNoteBlurred,
   emitNoteClosed,
   emitNoteRequestHydrate,
+  emitNoteReady,
 } from '../app/ipc';
 import NoteShell from '../components/Note/NoteShell';
 import type { NoteHydrateEvent, NoteRect } from '../lib/types';
@@ -18,6 +19,7 @@ export default function NotePage() {
   const [noteData, setNoteData] = useState<NoteHydrateEvent | null>(null);
   const windowRef = useRef<ReturnType<typeof getCurrentWindow> | null>(null);
   const positionCheckInterval = useRef<number | null>(null);
+  const adaptiveTimer = useRef<number | null>(null);
   const hydrationRetryTimeout = useRef<number | null>(null);
 
   useEffect(() => {
@@ -29,7 +31,7 @@ export default function NotePage() {
     const storeId = labelId; // use label as store id for all IPC
     console.log('[NotePage] Mounted', { labelId, rawId, storeId });
 
-    // Listen for hydration event
+    // Listen for hydration event FIRST, then signal readiness
     let unlisten: (() => void) | null = null;
     const setupHydration = async () => {
       unlisten = await onNoteHydrate((event) => {
@@ -39,8 +41,12 @@ export default function NotePage() {
           setNoteData(event);
         }
       });
-      // Ask Board to send hydration for this note (after listener is attached)
-      console.log('[NotePage] note:request_hydrate =>', storeId);
+      // Immediately declare readiness to Board, then keep request_hydrate for backward-compat
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[NotePage] note:ready =>', storeId);
+      }
+      emitNoteReady({ id: storeId });
+      // Fallback (older Board): request hydrate
       emitNoteRequestHydrate({ id: storeId });
       // Retry once after 1s if still not hydrated
       hydrationRetryTimeout.current = window.setTimeout(() => {
@@ -53,52 +59,61 @@ export default function NotePage() {
 
     setupHydration();
 
-    // Set up window event listeners
+    // Adaptive polling setup
+    const ACTIVE_MS = 1500;
+    const IDLE_INTERVAL = 450;
+    const ACTIVE_INTERVAL = 100;
+    let lastActiveAt = Date.now();
     let lastRect: NoteRect | null = null;
 
-    const checkPosition = async () => {
-      if (!windowRef.current) return;
+    const markActive = () => {
+      lastActiveAt = Date.now();
+    };
 
+    const currentInterval = () =>
+      Date.now() - lastActiveAt < ACTIVE_MS ? ACTIVE_INTERVAL : IDLE_INTERVAL;
+
+    const sampleAndEmit = async () => {
+      if (!windowRef.current) return false;
       try {
         const position = await windowRef.current.outerPosition();
         const size = await windowRef.current.outerSize();
-
         const currentRect: NoteRect = {
           x: position.x,
           y: position.y,
           width: size.width,
           height: size.height,
         };
-
-        // Check if position or size changed
-        if (
-          !lastRect ||
-          lastRect.x !== currentRect.x ||
-          lastRect.y !== currentRect.y
-        ) {
+        let changed = false;
+        if (!lastRect || lastRect.x !== currentRect.x || lastRect.y !== currentRect.y) {
           emitNoteMoved({ id: storeId, rect: currentRect });
+          changed = true;
         }
-
-        if (
-          !lastRect ||
-          lastRect.width !== currentRect.width ||
-          lastRect.height !== currentRect.height
-        ) {
+        if (!lastRect || lastRect.width !== currentRect.width || lastRect.height !== currentRect.height) {
           emitNoteResized({ id: storeId, rect: currentRect });
+          changed = true;
         }
-
         lastRect = currentRect;
+        return changed;
       } catch (error) {
         console.error('Error checking window position:', error);
+        return false;
       }
     };
 
-    // Poll for position/size changes (Tauri v2 doesn't have reliable move/resize events)
-    positionCheckInterval.current = window.setInterval(checkPosition, 100);
+    const tick = async () => {
+      const changed = await sampleAndEmit();
+      if (changed) markActive();
+      adaptiveTimer.current = window.setTimeout(tick, currentInterval());
+    };
+    tick();
 
     // Focus/blur events
     const handleFocus = () => {
       emitNoteFocused({ id: storeId });
+      // Treat focus as activity for polling
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      (function () { /* micro-task */ })();
     };
 
     const handleBlur = () => {
@@ -120,9 +135,7 @@ export default function NotePage() {
       if (hydrationRetryTimeout.current) {
         clearTimeout(hydrationRetryTimeout.current);
       }
-      if (positionCheckInterval.current) {
-        clearInterval(positionCheckInterval.current);
-      }
+      if (adaptiveTimer.current) window.clearTimeout(adaptiveTimer.current);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('beforeunload', handleBeforeUnload);
