@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --border: 240 5.9% 90%;
+  }
+
+  .dark {
+    --background: 0 0% 7%;
+    --foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --border: 240 3.7% 20%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html, body, #root {
+    @apply w-full h-full m-0 p-0 overflow-hidden;
+  }
+}
+
+/* Grid background for Board */
+.grid-background {
+  background-color: hsl(var(--background));
+  background-image: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent calc(var(--grid-density, 40px) - 1px),
+      hsl(var(--border)) calc(var(--grid-density, 40px) - 1px),
+      hsl(var(--border)) var(--grid-density, 40px)
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(var(--grid-density, 40px) - 1px),
+      hsl(var(--border)) calc(var(--grid-density, 40px) - 1px),
+      hsl(var(--border)) var(--grid-density, 40px)
+    );
+}
+
+/* Note window styles */
+.note-window {
+  @apply bg-background border border-border rounded-2xl shadow-xl;
+  @apply flex flex-col overflow-hidden;
+}
+
+.note-window-focused {
+  @apply ring-2 ring-accent-foreground/20 shadow-2xl;
+}
+
+.note-title-bar {
+  @apply flex items-center justify-between px-4 py-3 border-b border-border;
+  @apply cursor-move select-none;
+  -webkit-app-region: drag;
+}
+
+.note-content {
+  @apply flex-1 p-4 overflow-auto;
+  @apply resize-none border-none outline-none bg-transparent;
+  @apply text-foreground;
+}
+
+/* Link styles */
+.link-path {
+  @apply stroke-foreground/30 fill-none transition-all;
+  stroke-width: 2;
+}
+
+.link-path-selected {
+  @apply stroke-accent-foreground/70;
+  stroke-width: 3;
+}
+
+.link-path-hover {
+  @apply stroke-foreground/50;
+  stroke-width: 2.5;
+}
+
+/* Toolbar and UI */
+.toolbar {
+  @apply flex items-center gap-2 px-4 py-2 bg-muted border-b border-border;
+}
+
+.toolbar-button {
+  @apply px-3 py-1.5 rounded-md text-sm font-medium;
+  @apply bg-background hover:bg-accent hover:text-accent-foreground;
+  @apply transition-colors cursor-pointer;
+  @apply border border-border;
+}
+
+.toolbar-button-active {
+  @apply bg-accent text-accent-foreground;
+}
+
+.inspector-panel {
+  @apply absolute right-4 top-20 w-64 bg-background border border-border rounded-lg shadow-lg;
+  @apply p-4 space-y-4;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-muted;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-border rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground;
+}
+
+/* Utility classes */
+.glass-effect {
+  @apply bg-background/80 backdrop-blur-sm;
+}
+
+/* Focus ring */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-accent-foreground/20;
+}
+

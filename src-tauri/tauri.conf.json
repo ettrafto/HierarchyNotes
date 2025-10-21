@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "hierarchynotes",
+  "productName": "HierarchyNotes",
   "version": "0.1.0",
   "identifier": "com.evant.hierarchynotes",
   "build": {
@@ -12,14 +12,20 @@
   "app": {
     "windows": [
       {
-        "title": "hierarchynotes",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "HierarchyNotes - Board",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,

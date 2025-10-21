@@ -4,23 +4,50 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "format": "prettier --write .",
+    "check": "npm run lint && prettier --check .",
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.7.0",
+    "@tauri-apps/plugin-opener": "^2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.15.0",
+    "lucide-react": "^0.462.0",
+    "nanoid": "^5.1.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "tailwind-merge": "^2.6.0",
+    "zustand": "^5.0.7"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^22.10.5",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "@typescript-eslint/eslint-plugin": "^8.39.1",
+    "@typescript-eslint/parser": "^8.39.1",
     "@vitejs/plugin-react": "^4.6.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.33.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "immer": "^10.1.1",
+    "postcss": "^8.5.1",
+    "prettier": "^3.6.2",
+    "tailwindcss": "^3.4.17",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4",
-    "@tauri-apps/cli": "^2"
+    "vite": "^7.0.4"
   }
 }
