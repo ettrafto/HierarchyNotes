@@ -27,6 +27,7 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
   const lastClient = useRef<{ x: number; y: number } | null>(null);
   const dragging = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
+  const didDrag = useRef(false);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -36,6 +37,7 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
     dragging.current = true;
     setIsDragging(true);
     lastClient.current = { x: e.clientX, y: e.clientY };
+    didDrag.current = false;
     if (process.env.NODE_ENV !== 'production') {
       console.log('[Ghost] drag start', noteId, { startRect: startRect.current, client: startClient.current, scale });
     }
@@ -50,6 +52,11 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
     const nextY = Math.round(startRect.current.y + dyCss);
     useBoardStore.getState().updateNoteRect(noteId, { ...rect, x: nextX, y: nextY }, { fromDrag: true });
     lastClient.current = { x: e.clientX, y: e.clientY };
+    // Mark as drag if movement exceeds small threshold (2 CSS px)
+    if (!didDrag.current) {
+      const moved = Math.abs(dxCss) > 2 || Math.abs(dyCss) > 2;
+      if (moved) didDrag.current = true;
+    }
     if (process.env.NODE_ENV !== 'production') {
       console.log('[Ghost] drag move', noteId, { nextX, nextY });
     }
@@ -117,7 +124,11 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
   };
 
   const onClick = async () => {
-    if (isDragging) return;
+    // Ignore click if a drag occurred (even after pointer up)
+    if (isDragging || didDrag.current) {
+      didDrag.current = false; // reset for next interaction
+      return;
+    }
     const store = useBoardStore.getState();
     if (process.env.NODE_ENV !== 'production') {
       console.log('[Ghost] toggle window', noteId, { wasOpen: isOpen });
