@@ -8,7 +8,13 @@ import { saveBoardState } from './persistence';
 import { debounce } from '../lib/utils';
 import { spawnNoteWindow, closeNoteWindow, focusNoteWindow, onNoteReady, emitNoteHydrate } from './ipc';
 
+interface LinkingDraft {
+  sourceNoteId: ID | null;
+}
+
 interface BoardStoreState extends BoardState {
+  linkingDraft: LinkingDraft;
+  
   // Actions
   createNote: (rect?: Partial<NoteRect>) => Promise<void>;
   renameNote: (id: ID, title: string) => void;
@@ -24,6 +30,14 @@ interface BoardStoreState extends BoardState {
   setNoteOpen: (id: ID, isOpen: boolean) => void;
   bringNoteToFront: (id: ID) => void;
 
+  // Link actions (new)
+  startConnect: (sourceNoteId: ID) => void;
+  completeConnect: (targetNoteId: ID) => void;
+  cancelConnect: () => void;
+  addDirectedLink: (parentId: ID, childId: ID) => ID;
+  removeLink: (linkId: ID) => void;
+  
+  // Link actions (legacy)
   createLink: (sourceId: ID, targetId: ID) => void;
   deleteLink: (id: ID) => void;
 
@@ -75,6 +89,7 @@ export const useBoardStore = create<BoardStoreState>()(
       sidebarCollapsed: false,
     },
     dragEchoBlock: {},
+    linkingDraft: { sourceNoteId: null },
 
     // Note actions
     createNote: async (rectOverrides = {}) => {
@@ -217,20 +232,12 @@ export const useBoardStore = create<BoardStoreState>()(
         if (!opts?.fromDrag) {
           const until = (state as any).dragEchoBlock?.[id] || 0;
           if (Date.now() < until) {
-            if (process.env.NODE_ENV !== 'production') {
-              console.log('[Store] updateNoteRect ignored due to echo block', id, rect);
-            }
             return state;
           }
         }
         const note = state.notes[id];
         if (note) {
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('[Store] updateNoteRect', id, rect);
-          }
           note.rect = rect;
-        } else if (process.env.NODE_ENV !== 'production') {
-          console.warn('[Store] updateNoteRect: note not found for id', id, Object.keys(state.notes));
         }
       });
       debouncedPersist(get());
@@ -278,13 +285,15 @@ export const useBoardStore = create<BoardStoreState>()(
         delete state.notes[id];
 
         // Place into trash buffer
-        if (!state.ui.trash) state.ui.trash = {} as any;
-        state.ui.trash.lastDeleted = { note: deleted, deletedAt: Date.now() };
+        if (!state.ui.trash) state.ui.trash = {};
+        state.ui.trash!.lastDeleted = { note: deleted, deletedAt: Date.now() };
 
         // Delete related links
         Object.keys(state.links).forEach((linkId) => {
           const link = state.links[linkId];
-          if (link.sourceId === id || link.targetId === id) {
+          const srcId = link.source.kind === 'note' ? link.source.id : null;
+          const tgtId = link.target.kind === 'note' ? link.target.id : null;
+          if (srcId === id || tgtId === id) {
             delete state.links[linkId];
           }
         });
@@ -350,13 +359,76 @@ export const useBoardStore = create<BoardStoreState>()(
       }
     },
 
-    // Link actions
+    // Link actions (new)
+    startConnect: (sourceNoteId: ID) => {
+      set((state) => {
+        state.ui.mode = 'connect';
+        state.linkingDraft.sourceNoteId = sourceNoteId;
+      });
+    },
+
+    completeConnect: (targetNoteId: ID) => {
+      set((state) => {
+        const src = state.linkingDraft.sourceNoteId;
+        if (!src || src === targetNoteId) {
+          state.ui.mode = 'select';
+          state.linkingDraft.sourceNoteId = null;
+          return;
+        }
+        const id = nanoid();
+        const newLink = {
+          id,
+          directed: true,
+          source: { kind: 'note' as const, id: src },
+          target: { kind: 'note' as const, id: targetNoteId },
+        };
+        state.links[id] = newLink;
+        state.ui.mode = 'select';
+        state.linkingDraft.sourceNoteId = null;
+      });
+      debouncedPersist(get());
+    },
+
+    cancelConnect: () => {
+      set((state) => {
+        state.ui.mode = 'select';
+        state.linkingDraft.sourceNoteId = null;
+      });
+    },
+
+    addDirectedLink: (parentId: ID, childId: ID) => {
+      const id = nanoid();
+      set((state) => {
+        state.links[id] = {
+          id,
+          directed: true,
+          source: { kind: 'note', id: parentId },
+          target: { kind: 'note', id: childId },
+        };
+      });
+      debouncedPersist(get());
+      return id;
+    },
+
+    removeLink: (linkId: ID) => {
+      set((state) => {
+        delete state.links[linkId];
+      });
+      debouncedPersist(get());
+    },
+
+    // Link actions (legacy compatibility)
     createLink: (sourceId: ID, targetId: ID) => {
       // Check if link already exists
       const existingLink = Object.values(get().links).find(
-        (link) =>
-          (link.sourceId === sourceId && link.targetId === targetId) ||
-          (link.sourceId === targetId && link.targetId === sourceId)
+        (link) => {
+          const srcId = link.source.kind === 'note' ? link.source.id : null;
+          const tgtId = link.target.kind === 'note' ? link.target.id : null;
+          return (
+            (srcId === sourceId && tgtId === targetId) ||
+            (srcId === targetId && tgtId === sourceId)
+          );
+        }
       );
 
       if (existingLink) return;
@@ -364,8 +436,8 @@ export const useBoardStore = create<BoardStoreState>()(
       const id = nanoid();
       const link: Link = {
         id,
-        sourceId,
-        targetId,
+        source: { kind: 'note', id: sourceId },
+        target: { kind: 'note', id: targetId },
         directed: true,
       };
 
@@ -469,6 +541,13 @@ export const useBoardStore = create<BoardStoreState>()(
 
         // Reset will be done externally by reloading sample data
       });
+    },
+
+    // Selectors
+    selectAllNotes: () => Object.values(get().notes),
+    selectNoteById: (id: ID) => get().notes[id],
+    persistNow: async () => {
+      await saveBoardState(get());
     },
   }))
 );

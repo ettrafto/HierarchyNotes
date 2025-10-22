@@ -20,11 +20,23 @@ export type NoteWindow = {
   hidden?: boolean;       // board visibility toggle
 };
 
+// === Future-facing target reference (stub; not used yet) ===
+export type SubtaskRef = {
+  noteId: ID;
+  // e.g., a stable identifier for a subtask inside a note; not implemented yet
+  subtaskId: string;
+};
+
+// Link endpoints can be a Note or (future) a Subtask within a Note
+export type LinkEndpoint =
+  | { kind: 'note'; id: ID }
+  | { kind: 'subtask'; ref: SubtaskRef }; // reserved for future
+
 export type Link = {
   id: ID;
-  sourceId: ID;
-  targetId: ID;
-  directed?: boolean;
+  source: LinkEndpoint;          // replaces sourceId
+  target: LinkEndpoint;          // replaces targetId
+  directed?: boolean;            // parent -> child when true
   label?: string;
 };
 
@@ -39,6 +51,7 @@ export type UIState = {
   selectedLinkIds: ID[];
   gridDensity: number;            // in pixels
   focusedNoteId?: ID | null;
+  sidebarCollapsed?: boolean;
   trash?: {
     lastDeleted?: {
       note: NoteWindow; // store full note for restoration

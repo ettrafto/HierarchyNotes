@@ -3,6 +3,31 @@
 import type { AnchorPoint, Point } from './types';
 
 /**
+ * Build a simple cubic path between two points
+ */
+export function cubicPath(from: Point, to: Point): string {
+  const dx = (to.x - from.x);
+  const dy = (to.y - from.y);
+  const c1: Point = { x: from.x + dx * 0.5, y: from.y };
+  const c2: Point = { x: to.x - dx * 0.5,   y: to.y };
+  return `M ${from.x},${from.y} C ${c1.x},${c1.y} ${c2.x},${c2.y} ${to.x},${to.y}`;
+}
+
+/**
+ * Build a simple tidy orthogonal path
+ */
+export function orthoPath(from: Point, to: Point): string {
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2;
+
+  const horizontalFirst = Math.abs(to.x - from.x) > Math.abs(to.y - from.y);
+  const p1 = horizontalFirst ? { x: midX, y: from.y } : { x: from.x, y: midY };
+  const p2 = horizontalFirst ? { x: midX, y: to.y   } : { x: to.x,   y: midY };
+
+  return `M ${from.x},${from.y} L ${p1.x},${p1.y} L ${p2.x},${p2.y} L ${to.x},${to.y}`;
+}
+
+/**
  * Build a smooth cubic Bezier path between two anchor points
  */
 export function smoothPath(source: AnchorPoint, target: AnchorPoint): string {

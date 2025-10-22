@@ -11,6 +11,7 @@ export async function loadBoardState(): Promise<BoardState | null> {
   try {
     const state = await loadLayout();
     if (!state) return null;
+    
     // Backward-compatible defaults: ensure z and focusedNoteId
     const notes = state.notes || {};
     const noteArray = Object.values(notes);
@@ -26,6 +27,22 @@ export async function loadBoardState(): Promise<BoardState | null> {
         (state.ui as any).focusedNoteId = top?.id ?? null;
       }
     }
+
+    // Migrate legacy links: { sourceId, targetId } -> { source: {kind, id}, target: {kind, id} }
+    if (state.links) {
+      Object.values(state.links).forEach((link: any) => {
+        // Check if link has old format
+        if (link.sourceId !== undefined && !link.source) {
+          link.source = { kind: 'note', id: link.sourceId };
+          delete link.sourceId;
+        }
+        if (link.targetId !== undefined && !link.target) {
+          link.target = { kind: 'note', id: link.targetId };
+          delete link.targetId;
+        }
+      });
+    }
+
     return state as BoardState;
   } catch (error) {
     console.error('Failed to load board state:', error);
@@ -112,50 +129,7 @@ export function createSampleData(): BoardState {
         isOpen: false,
       },
     },
-    links: {
-      'link-1': {
-        id: 'link-1',
-        sourceId: 'note-1',
-        targetId: 'note-2',
-        directed: true,
-      },
-      'link-2': {
-        id: 'link-2',
-        sourceId: 'note-1',
-        targetId: 'note-3',
-        directed: true,
-      },
-      'link-3': {
-        id: 'link-3',
-        sourceId: 'note-2',
-        targetId: 'note-4',
-        directed: true,
-      },
-      'link-4': {
-        id: 'link-4',
-        sourceId: 'note-3',
-        targetId: 'note-4',
-        directed: false,
-      },
-      'link-5': {
-        id: 'link-5',
-        sourceId: 'note-3',
-        targetId: 'note-5',
-        directed: true,
-      },
-      'link-6': {
-        id: 'link-6',
-        sourceId: 'note-4',
-        targetId: 'note-6',
-        directed: true,
-      },
-      'link-7': {
-        id: 'link-7',
-        sourceId: 'note-5',
-        targetId: 'note-6',
-        directed: false,
-      },
-    },
+    links: {},
     ui: {
       mode: 'select',
       snapToGrid: true,

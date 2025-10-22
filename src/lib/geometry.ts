@@ -34,32 +34,65 @@ export function distance(a: Point, b: Point): number {
 }
 
 /**
- * Find the nearest anchor points between two rects
+ * Calculate Manhattan distance between two points
+ */
+export function manhattan(a: Point, b: Point): number {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+}
+
+/**
+ * Type for anchor pair with keys
+ */
+export type AnchorPair = { 
+  fromKey: Anchor;
+  toKey: Anchor;
+  from: Point;
+  to: Point;
+};
+
+/**
+ * Choose the best anchor pair: prefer horizontal alignment for wide gaps, vertical for tall gaps.
+ */
+export function bestAnchorPair(a: NoteRect, b: NoteRect): AnchorPair {
+  const A = getAnchorPoints(a);
+  const B = getAnchorPoints(b);
+
+  const candidates: AnchorPair[] = [
+    { fromKey: 'right', toKey: 'left',   from: A.right,  to: B.left   },
+    { fromKey: 'left',  toKey: 'right',  from: A.left,   to: B.right  },
+    { fromKey: 'bottom', toKey: 'top',   from: A.bottom, to: B.top    },
+    { fromKey: 'top',   toKey: 'bottom', from: A.top,    to: B.bottom },
+  ];
+
+  // Heuristic: evaluate by manhattan distance with directional bias
+  const dx = (a.x + a.width / 2) - (b.x + b.width / 2);
+  const dy = (a.y + a.height / 2) - (b.y + b.height / 2);
+  const horizFirst = Math.abs(dx) > Math.abs(dy);
+
+  const scored = candidates.map(c => {
+    const d = manhattan(c.from, c.to);
+    const bias =
+      (horizFirst && (c.fromKey === 'right' || c.fromKey === 'left')) ? 0 : 
+      (!horizFirst && (c.fromKey === 'top' || c.fromKey === 'bottom')) ? 0 : 8; // small bias
+    return { c, score: d + bias };
+  });
+
+  scored.sort((p, q) => p.score - q.score);
+  return scored[0].c;
+}
+
+/**
+ * Find the nearest anchor points between two rects (legacy compatibility)
  */
 export function nearestAnchors(
   rectA: NoteRect,
   rectB: NoteRect
 ): { source: AnchorPoint; target: AnchorPoint } {
-  const anchorsA = getAnchorPoints(rectA);
-  const anchorsB = getAnchorPoints(rectB);
-
-  let minDist = Infinity;
-  let bestSource: AnchorPoint = { point: anchorsA.right, anchor: 'right' };
-  let bestTarget: AnchorPoint = { point: anchorsB.left, anchor: 'left' };
-
-  // Find the pair with minimum distance
-  (Object.keys(anchorsA) as Anchor[]).forEach((anchorA) => {
-    (Object.keys(anchorsB) as Anchor[]).forEach((anchorB) => {
-      const dist = distance(anchorsA[anchorA], anchorsB[anchorB]);
-      if (dist < minDist) {
-        minDist = dist;
-        bestSource = { point: anchorsA[anchorA], anchor: anchorA };
-        bestTarget = { point: anchorsB[anchorB], anchor: anchorB };
-      }
-    });
-  });
-
-  return { source: bestSource, target: bestTarget };
+  const pair = bestAnchorPair(rectA, rectB);
+  return {
+    source: { point: pair.from, anchor: pair.fromKey },
+    target: { point: pair.to, anchor: pair.toKey }
+  };
 }
 
 /**

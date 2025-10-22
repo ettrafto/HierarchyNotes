@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Link hover styles */
+.link-hoverable:hover {
+  stroke: #f87171 !important;
+  stroke-width: 3.5;
+  stroke-opacity: 1 !important;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

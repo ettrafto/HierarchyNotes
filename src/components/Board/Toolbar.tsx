@@ -5,6 +5,7 @@ import { useBoardStore } from '../../app/store';
 
 export default function Toolbar() {
   const ui = useBoardStore((state) => state.ui);
+  const linkingDraft = useBoardStore((state) => state.linkingDraft);
   const setMode = useBoardStore((state) => state.setMode);
   const toggleSnapToGrid = useBoardStore((state) => state.toggleSnapToGrid);
   const setConnectStyle = useBoardStore((state) => state.setConnectStyle);
@@ -68,6 +69,21 @@ export default function Toolbar() {
           <span>{ui.connectStyle === 'smooth' ? 'Smooth' : 'Orthogonal'}</span>
         </button>
       </div>
+
+      {/* Connect mode hint */}
+      {ui.mode === 'connect' && (
+        <>
+          <div className="h-4 w-px bg-border" />
+          <div className="text-sm text-blue-400 font-medium">
+            {linkingDraft.sourceNoteId 
+              ? '→ Click target (child) note' 
+              : 'Click source (parent) note'}
+            <span className="ml-2 text-xs text-muted-foreground">
+              (Click link to delete • Esc to cancel)
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

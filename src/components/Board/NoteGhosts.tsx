@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useBoardStore } from '../../app/store';
 import { setNotePosition } from '../../app/ipc';
 
@@ -6,11 +6,6 @@ export default function NoteGhosts({ scale }: { scale: number }) {
   const notesRecord = useBoardStore((s) => s.notes);
   const notes = useMemo(() => Object.values(notesRecord), [notesRecord]);
 
-  useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[NoteGhosts] render notes', notes.map(n => ({ id: n.id, rect: n.rect, isOpen: n.isOpen })));
-    }
-  }, [notes]);
 
   return (
     <div className="absolute inset-0" style={{ zIndex: 2 }}>
@@ -28,6 +23,12 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
   const dragging = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
   const didDrag = useRef(false);
+  
+  // Get connect mode state
+  const mode = useBoardStore((s) => s.ui.mode);
+  const sourceId = useBoardStore((s) => s.linkingDraft.sourceNoteId);
+  const isConnectMode = mode === 'connect';
+  const isConnectSource = isConnectMode && sourceId === noteId;
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -38,9 +39,6 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
     setIsDragging(true);
     lastClient.current = { x: e.clientX, y: e.clientY };
     didDrag.current = false;
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[Ghost] drag start', noteId, { startRect: startRect.current, client: startClient.current, scale });
-    }
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -57,9 +55,6 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
       const moved = Math.abs(dxCss) > 2 || Math.abs(dyCss) > 2;
       if (moved) didDrag.current = true;
     }
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[Ghost] drag move', noteId, { nextX, nextY });
-    }
   };
 
   const finalizeDrag = async (clientX: number, clientY: number) => {
@@ -68,9 +63,6 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
     const dyCss = (clientY - startClient.current.y) / scale;
     const nextX = Math.round(startRect.current.x + dxCss);
     const nextY = Math.round(startRect.current.y + dyCss);
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[Ghost] drag end', noteId, { nextX, nextY, isOpen });
-    }
     // Clean up drag state BEFORE any async work to avoid sticky drag
     dragging.current = false;
     startClient.current = null;
@@ -130,6 +122,19 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
       return;
     }
     const store = useBoardStore.getState();
+    
+    // Handle connect mode
+    if (store.ui.mode === 'connect') {
+      const src = store.linkingDraft.sourceNoteId;
+      if (!src) {
+        store.startConnect(noteId);
+      } else {
+        store.completeConnect(noteId);
+      }
+      return;
+    }
+    
+    // Default behavior: toggle window
     if (process.env.NODE_ENV !== 'production') {
       console.log('[Ghost] toggle window', noteId, { wasOpen: isOpen });
     }
@@ -141,6 +146,24 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
     }
   };
 
+  // Determine styling based on mode
+  let borderStyle = isOpen ? '2px solid #00ffc8' : '1.5px dashed #777';
+  let bgColor = isOpen ? 'rgba(0,255,200,0.18)' : 'rgba(255,255,255,0.06)';
+  let boxShadow = isOpen ? '0 0 12px rgba(0,255,200,0.4)' : 'none';
+  let cursorStyle = isDragging ? 'grabbing' : 'grab';
+  
+  if (isConnectMode) {
+    cursorStyle = 'pointer';
+    if (isConnectSource) {
+      borderStyle = '2px solid #60a5fa';
+      bgColor = 'rgba(96, 165, 250, 0.2)';
+      boxShadow = '0 0 16px rgba(96, 165, 250, 0.6)';
+    } else {
+      borderStyle = '2px dashed #60a5fa';
+      bgColor = 'rgba(96, 165, 250, 0.1)';
+    }
+  }
+
   const style: React.CSSProperties = {
     position: 'absolute',
     left: rect.x * scale,
@@ -148,13 +171,13 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
     width: rect.width * scale,
     height: rect.height * scale,
     borderRadius: 6,
-    border: isOpen ? '2px solid #00ffc8' : '1.5px dashed #777',
-    backgroundColor: isOpen ? 'rgba(0,255,200,0.18)' : 'rgba(255,255,255,0.06)',
-    boxShadow: isOpen ? '0 0 12px rgba(0,255,200,0.4)' : 'none',
+    border: borderStyle,
+    backgroundColor: bgColor,
+    boxShadow: boxShadow,
     opacity: isOpen ? 1 : 0.6,
     transition: 'all 0.1s ease',
     overflow: 'hidden',
-    cursor: isDragging ? 'grabbing' : 'grab',
+    cursor: cursorStyle,
     userSelect: 'none',
   };
 

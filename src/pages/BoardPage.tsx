@@ -180,6 +180,16 @@ export default function BoardPage() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape to cancel connect mode
+      if (e.key === 'Escape') {
+        const state = useBoardStore.getState();
+        if (state.ui.mode === 'connect') {
+          e.preventDefault();
+          state.cancelConnect();
+        }
+        return;
+      }
+
       // N or Cmd/Ctrl+N for new note
       if ((e.key === 'n' || e.key === 'N') && (e.metaKey || e.ctrlKey || !e.metaKey && !e.ctrlKey)) {
         if (!e.metaKey && !e.ctrlKey && (e.target as HTMLElement).tagName !== 'INPUT' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
@@ -249,7 +259,7 @@ export default function BoardPage() {
           >
             <Grid />
             <NoteGhosts scale={scale.factor} />
-            <LinkLayer />
+            <LinkLayer scale={scale.factor} />
             <Inspector />
             {/* Empty state */}
             {allNotesArray.length === 0 && (
