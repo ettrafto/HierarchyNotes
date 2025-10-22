@@ -23,6 +23,8 @@ import AutoSaveToast from '../components/Toasts/AutoSaveToast';
 import type { NoteWindow } from '../lib/types';
 import NotesList from '../components/Board/NotesList';
 import { currentMonitor } from '@tauri-apps/api/window';
+import ExternalTiles from '../components/Board/ExternalTiles';
+import { listTopLevelWindows } from '../app/ipc';
 
 export default function BoardPage() {
   const initializeFromState = useBoardStore((state) => state.initializeFromState);
@@ -33,7 +35,10 @@ export default function BoardPage() {
   const openNoteWindow = useBoardStore((state) => state.openNoteWindow);
   const notes = useBoardStore((state) => state.notes);
   const sidebarCollapsed = useBoardStore((state) => state.ui.sidebarCollapsed);
+  const snapToGrid = useBoardStore((state) => state.ui.snapToGrid);
   const allNotesArray = Object.values(notes);
+  const externals = useBoardStore((s) => s.externals || {});
+  const syncExternalFromOS = useBoardStore((s) => s.syncExternalFromOS);
 
   // Autosave toast state
   const [persistStatus, setPersistStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
@@ -41,6 +46,8 @@ export default function BoardPage() {
 
   // Screen scaling (proportional board)
   const [scale, setScale] = useState<{ factor: number; width: number; height: number }>({ factor: 1, width: 0, height: 0 });
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const [gridPx, setGridPx] = useState(20);
   useEffect(() => {
     (async () => {
       try {
@@ -64,6 +71,19 @@ export default function BoardPage() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!boardRef.current) return;
+    const cs = getComputedStyle(boardRef.current);
+    const varGrid = cs.getPropertyValue('--board-grid-size').trim();
+    if (varGrid && varGrid.endsWith('px')) {
+      setGridPx(parseFloat(varGrid));
+    } else {
+      const bgSize = (cs as any).backgroundSize || '';
+      const match = String(bgSize).match(/([\d.]+)px/);
+      setGridPx(match ? parseFloat(match[1]) : 20);
+    }
+  }, [boardRef.current]);
 
   // Helper: wait for note:ready(id)
   function waitForNoteReady(id: string, ms: number): Promise<void> {
@@ -210,6 +230,61 @@ export default function BoardPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Lightweight polling to keep external sizes in sync while focused
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const ids = Object.keys(useBoardStore.getState().externals || {});
+      ids.forEach((id) => syncExternalFromOS(id));
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [syncExternalFromOS]);
+
+  // Auto-discovery of external windows (Chrome/Spotify) and upsert tiles
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | null = null;
+
+    async function tick() {
+      try {
+        const all = await listTopLevelWindows();
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[BoardPage] listTopLevelWindows count=', all.length, all.slice(0, 5));
+        }
+        // Keep only windows that are not ours and are within the primary monitor logical bounds
+        const maxW = scale.width || window.innerWidth;
+        const maxH = scale.height || window.innerHeight;
+        const filtered = all.filter((w) => {
+          const isSelf = /HierarchyNotes/i.test(w.title);
+          // listTopLevelWindows already returns logical px (we convert in ipc if needed),
+          // so treat these as logical directly to avoid double-dividing by DPR.
+          const lx = (w.x || 0);
+          const ly = (w.y || 0);
+          const lw = (w.width || 0);
+          const lh = (w.height || 0);
+          const withinX = lx + lw > 0 && lx < (scale.width || maxW);
+          const withinY = ly + lh > 0 && ly < (scale.height || maxH);
+          return !isSelf && withinX && withinY;
+        });
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[BoardPage] externals filtered=', filtered.length);
+        }
+        const store = useBoardStore.getState();
+        filtered.forEach((w) => store.upsertExternalFromOS(w as any));
+        store.reconcileExternalsFromScan(filtered.map((w) => w.hwnd));
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.warn('[BoardPage] listTopLevelWindows failed', e);
+      } finally {
+        if (!cancelled) timer = window.setTimeout(tick, 1500);
+      }
+    }
+
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
+
   const handleResetLayout = async () => {
     const sampleData = createSampleData();
     
@@ -239,6 +314,7 @@ export default function BoardPage() {
           <AutoSaveToast status={persistStatus} message={toastMessage} onHide={() => setPersistStatus('idle')} />
           <div
             className="relative"
+            ref={boardRef}
             style={{
               width: scale.width * scale.factor,
               height: scale.height * scale.factor,
@@ -248,11 +324,12 @@ export default function BoardPage() {
             }}
           >
             <Grid />
-            <NoteGhosts scale={scale.factor} />
+            <NoteGhosts scale={scale.factor} gridPx={gridPx} enableSnap={snapToGrid} />
+            <ExternalTiles scale={scale.factor} />
             <LinkLayer />
             <Inspector />
             {/* Empty state */}
-            {allNotesArray.length === 0 && (
+            {allNotesArray.length === 0 && Object.keys(externals).length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="text-center opacity-70">
                   <div className="text-lg font-semibold">No notes yet</div>

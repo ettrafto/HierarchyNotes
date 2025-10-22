@@ -13,7 +13,9 @@ export async function loadBoardState(): Promise<BoardState | null> {
     if (!state) return null;
     // Backward-compatible defaults: ensure z and focusedNoteId
     const notes = state.notes || {};
+    const externals = (state as any).externals || {};
     const noteArray = Object.values(notes);
+    const extArray = Object.values(externals as Record<string, any>);
     if (noteArray.length > 0) {
       // Assign default z if missing based on index order
       noteArray.forEach((n, idx) => {
@@ -25,6 +27,15 @@ export async function loadBoardState(): Promise<BoardState | null> {
         const top = noteArray.reduce((acc, n) => (n.z > acc.z ? n : acc), noteArray[0]);
         (state.ui as any).focusedNoteId = top?.id ?? null;
       }
+    }
+    if (extArray.length > 0) {
+      // Assign defaults
+      extArray.forEach((e: any, idx: number) => {
+        if (typeof e.z !== 'number') e.z = idx + 1;
+        if (!e.rect) e.rect = { x: 200 + idx * 40, y: 200 + idx * 40, width: 400, height: 240 };
+        if (typeof e.isBound !== 'boolean') e.isBound = true;
+      });
+      (state as any).externals = externals;
     }
     return state as BoardState;
   } catch (error) {

@@ -1,7 +1,8 @@
 // Toolbar component - mode and style controls
 
-import { MousePointer2, Link2, Grid3x3, Minus, Menu } from 'lucide-react';
+import { MousePointer2, Link2, Grid3x3, Minus, Menu, Plus } from 'lucide-react';
 import { useBoardStore } from '../../app/store';
+import { useState } from 'react';
 
 export default function Toolbar() {
   const ui = useBoardStore((state) => state.ui);
@@ -9,6 +10,8 @@ export default function Toolbar() {
   const toggleSnapToGrid = useBoardStore((state) => state.toggleSnapToGrid);
   const setConnectStyle = useBoardStore((state) => state.setConnectStyle);
   const toggleSidebar = useBoardStore((state) => state.toggleSidebar);
+  const createExternalByTitle = useBoardStore((s) => s.createExternalByTitle);
+  const [query, setQuery] = useState('');
 
   return (
     <div className="toolbar glass-effect">
@@ -66,6 +69,25 @@ export default function Toolbar() {
         >
           <Minus size={16} />
           <span>{ui.connectStyle === 'smooth' ? 'Smooth' : 'Orthogonal'}</span>
+        </button>
+      </div>
+
+      <div className="h-4 w-px bg-border" />
+
+      <div className="flex items-center gap-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Add External (title contains...)"
+          className="bg-transparent border border-zinc-700 rounded px-2 py-1 text-sm w-64 outline-none focus:border-zinc-500"
+        />
+        <button
+          onClick={() => { if (query.trim()) createExternalByTitle(query.trim()); }}
+          className="toolbar-button flex items-center gap-2"
+          title="Create external tile by window title substring"
+        >
+          <Plus size={16} />
+          <span>Add External</span>
         </button>
       </div>
     </div>

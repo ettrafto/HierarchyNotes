@@ -98,6 +98,39 @@ async fn set_note_position(app: AppHandle, id: String, x: f64, y: f64) -> Result
     }
 }
 
+/// Set a note window's size (logical px)
+#[tauri::command]
+async fn set_note_size(app: AppHandle, id: String, width: f64, height: f64) -> Result<(), String> {
+    let label = if id.starts_with("note-") { id.clone() } else { format!("note-{}", id) };
+    if let Some(window) = app.get_webview_window(&label) {
+        println!("[set_note_size] id={} size=({}, {})", label, width, height);
+        window
+            .set_size(tauri::Size::Logical((width, height).into()))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err(format!("Window {} not found", label))
+    }
+}
+
+/// Set a note window's full rect (position + size) in logical px
+#[tauri::command]
+async fn set_note_rect(app: AppHandle, id: String, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
+    let label = if id.starts_with("note-") { id.clone() } else { format!("note-{}", id) };
+    if let Some(window) = app.get_webview_window(&label) {
+        println!("[set_note_rect] id={} rect=({}, {}, {}, {})", label, x, y, width, height);
+        window
+            .set_position(tauri::Position::Logical((x, y).into()))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(tauri::Size::Logical((width, height).into()))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err(format!("Window {} not found", label))
+    }
+}
+
 /// Persist the board layout to disk
 #[tauri::command]
 async fn persist_layout(app: AppHandle, board_state: serde_json::Value) -> Result<(), String> {
@@ -127,6 +160,212 @@ async fn load_layout(app: AppHandle) -> Result<String, String> {
     Ok(json)
 }
 
+// ============================================================================
+// Windows-only: External OS window control (no embed/preview)
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+mod external_windows {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use core::ffi::c_void;
+    use std::ptr::null_mut;
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, HANDLE};
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetClassNameW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::Win32::System::ProcessStatus::K32GetProcessImageFileNameW;
+    use windows::Win32::Foundation::CloseHandle;
+
+    struct EnumCtx {
+        query_lower: String,
+        results: Vec<HWND>,
+    }
+
+    unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let ctx = &mut *(lparam.0 as *mut EnumCtx);
+        // Only visible top-level windows
+        if !IsWindowVisible(hwnd).as_bool() {
+            return BOOL(1);
+        }
+        let len = unsafe { GetWindowTextLengthW(hwnd) } as i32;
+        if len == 0 {
+            return BOOL(1);
+        }
+        let mut buf: Vec<u16> = vec![0u16; (len + 1) as usize];
+        let read = unsafe { GetWindowTextW(hwnd, &mut buf) } as usize;
+        buf.truncate(read);
+        let title = OsString::from_wide(&buf).to_string_lossy().to_string();
+        if title.to_lowercase().contains(&ctx.query_lower) {
+            ctx.results.push(hwnd);
+        }
+        BOOL(1)
+    }
+
+    pub fn find_by_title_substring(query: String) -> Result<Vec<u64>, String> {
+        let mut ctx = EnumCtx { query_lower: query.to_lowercase(), results: Vec::new() };
+        let ctx_ptr = &mut ctx as *mut EnumCtx as isize;
+        let res = unsafe { EnumWindows(Some(enum_proc), LPARAM(ctx_ptr)) };
+        if let Err(e) = res {
+            return Err(format!("EnumWindows failed: {}", e));
+        }
+        Ok(ctx.results.iter().map(|h| h.0 as isize as i64 as u64).collect())
+    }
+
+    fn get_title(hwnd: HWND) -> String {
+        let len = unsafe { GetWindowTextLengthW(hwnd) } as i32;
+        if len <= 0 { return String::new(); }
+        let mut buf: Vec<u16> = vec![0u16; (len + 1) as usize];
+        let read = unsafe { GetWindowTextW(hwnd, &mut buf) } as usize;
+        buf.truncate(read);
+        OsString::from_wide(&buf).to_string_lossy().to_string()
+    }
+
+    fn get_class(hwnd: HWND) -> String {
+        let mut buf: [u16; 256] = [0; 256];
+        let read = unsafe { GetClassNameW(hwnd, &mut buf) } as usize;
+        OsString::from_wide(&buf[..read]).to_string_lossy().to_string()
+    }
+
+    fn get_exe_for_pid(pid: u32) -> String {
+        unsafe {
+            let h: HANDLE = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+                Ok(handle) => handle,
+                Err(_) => return String::new(),
+            };
+            let mut buf = [0u16; 512];
+            let read = K32GetProcessImageFileNameW(h, &mut buf) as usize;
+            let s = OsString::from_wide(&buf[..read]).to_string_lossy().to_string();
+            let _ = CloseHandle(h);
+            s
+        }
+    }
+
+    pub fn get_rect(hwnd_u64: u64) -> Result<(f64, f64, f64, f64), String> {
+        let hwnd = HWND(hwnd_u64 as usize as *mut c_void);
+        let mut rect = RECT::default();
+        let res = unsafe { GetWindowRect(hwnd, &mut rect) };
+        if let Err(e) = res {
+            return Err(format!("GetWindowRect failed: {}", e));
+        }
+        let x = rect.left as f64;
+        let y = rect.top as f64;
+        let w = (rect.right - rect.left) as f64;
+        let h = (rect.bottom - rect.top) as f64;
+        Ok((x, y, w, h))
+    }
+
+    pub fn set_rect(hwnd_u64: u64, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+        let hwnd = HWND(hwnd_u64 as usize as *mut c_void);
+        let res = unsafe {
+            SetWindowPos(
+                hwnd,
+                HWND(null_mut()),
+                x.round() as i32,
+                y.round() as i32,
+                w.round() as i32,
+                h.round() as i32,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        };
+        if let Err(e) = res {
+            return Err(format!("SetWindowPos failed: {}", e));
+        }
+        Ok(())
+    }
+
+    #[derive(serde::Serialize)]
+    pub struct ExternalWinInfo {
+        pub hwnd: u64,
+        pub title: String,
+        pub class_name: String,
+        pub pid: u32,
+        pub exe: String,
+        pub x: f64,
+        pub y: f64,
+        pub width: f64,
+        pub height: f64,
+    }
+
+    pub fn list_top_level_windows_info() -> Result<Vec<ExternalWinInfo>, String> {
+        let mut out: Vec<ExternalWinInfo> = Vec::new();
+        unsafe extern "system" fn collect_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+            if IsWindowVisible(hwnd).as_bool() {
+                let title = get_title(hwnd);
+                if !title.is_empty() {
+                    let class_name = get_class(hwnd);
+                    let mut rect = RECT::default();
+                    if GetWindowRect(hwnd, &mut rect).is_ok() {
+                        let mut pid = 0u32;
+                        let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+                        let exe = get_exe_for_pid(pid);
+                        let info = ExternalWinInfo {
+                            hwnd: hwnd.0 as usize as u64,
+                            title,
+                            class_name,
+                            pid,
+                            exe,
+                            x: rect.left as f64,
+                            y: rect.top as f64,
+                            width: (rect.right - rect.left) as f64,
+                            height: (rect.bottom - rect.top) as f64,
+                        };
+                        let v = unsafe { &mut *(lparam.0 as *mut Vec<ExternalWinInfo>) };
+                        v.push(info);
+                    }
+                }
+            }
+            BOOL(1)
+        }
+        unsafe {
+            let res = EnumWindows(Some(collect_proc), LPARAM((&mut out as *mut Vec<ExternalWinInfo>) as isize));
+            if let Err(e) = res {
+                return Err(format!("EnumWindows failed: {}", e));
+            }
+        }
+        Ok(out)
+    }
+}
+
+#[tauri::command]
+async fn find_windows_by_title_substring(query: String) -> Result<Vec<u64>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return external_windows::find_by_title_substring(query);
+    }
+    #[allow(unreachable_code)]
+    Err("Windows-only command".into())
+}
+
+#[tauri::command]
+async fn get_external_window_rect(hwnd: u64) -> Result<(f64, f64, f64, f64), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return external_windows::get_rect(hwnd);
+    }
+    #[allow(unreachable_code)]
+    Err("Windows-only command".into())
+}
+
+#[tauri::command]
+async fn set_external_window_rect(hwnd: u64, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return external_windows::set_rect(hwnd, x, y, w, h);
+    }
+    #[allow(unreachable_code)]
+    Err("Windows-only command".into())
+}
+
+#[tauri::command]
+async fn list_top_level_windows() -> Result<Vec<external_windows::ExternalWinInfo>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return external_windows::list_top_level_windows_info();
+    }
+    #[allow(unreachable_code)]
+    Err("Windows-only command".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -145,8 +384,14 @@ pub fn run() {
             focus_note_window,
             close_note_window,
             set_note_position,
+            set_note_size,
+            set_note_rect,
             persist_layout,
             load_layout,
+            find_windows_by_title_substring,
+            get_external_window_rect,
+            set_external_window_rect,
+            list_top_level_windows,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

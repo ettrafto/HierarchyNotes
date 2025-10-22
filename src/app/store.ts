@@ -3,10 +3,11 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { nanoid } from 'nanoid';
-import type { BoardState, NoteWindow, Link, NoteRect, ID, UIMode, ConnectStyle } from '../lib/types';
+import type { BoardState, NoteWindow, Link, NoteRect, ID, UIMode, ConnectStyle, ExternalWindow } from '../lib/types';
 import { saveBoardState } from './persistence';
 import { debounce } from '../lib/utils';
-import { spawnNoteWindow, closeNoteWindow, focusNoteWindow, onNoteReady, emitNoteHydrate } from './ipc';
+import { spawnNoteWindow, closeNoteWindow, focusNoteWindow, onNoteReady, emitNoteHydrate, findWindowsByTitleSubstring, getExternalWindowRect, setExternalWindowRect } from './ipc';
+import type { ExternalWinInfo } from './ipc';
 
 interface BoardStoreState extends BoardState {
   // Actions
@@ -48,6 +49,15 @@ interface BoardStoreState extends BoardState {
   selectNoteById: (id: ID) => NoteWindow | undefined;
   persistNow: () => Promise<void>;
   toggleNoteHidden: (id: ID) => void;
+
+  // External windows
+  createExternalByTitle: (query: string) => Promise<void>;
+  moveExternal: (id: ID, rect: NoteRect) => Promise<void>;
+  syncExternalFromOS: (id: ID) => Promise<void>;
+  toggleExternalHidden: (id: ID) => void;
+  // Auto discovery helpers
+  upsertExternalFromOS: (w: ExternalWinInfo) => void;
+  reconcileExternalsFromScan: (currentHwnds: number[]) => void;
 }
 
 // Debounced persist function
@@ -62,6 +72,7 @@ export const useBoardStore = create<BoardStoreState>()(
   immer((set, get) => ({
     // Initial state
     notes: {},
+    externals: {},
     links: {},
     ui: {
       mode: 'select',
@@ -75,6 +86,11 @@ export const useBoardStore = create<BoardStoreState>()(
       sidebarCollapsed: false,
     },
     dragEchoBlock: {},
+
+    // DPR helpers
+    // We keep rects in logical CSS px in the store;
+    // OS APIs operate in physical px; convert at boundaries.
+    
 
     // Note actions
     createNote: async (rectOverrides = {}) => {
@@ -260,6 +276,146 @@ export const useBoardStore = create<BoardStoreState>()(
         if (state.notes[id]) {
           state.notes[id].hidden = !state.notes[id].hidden;
         }
+      });
+    },
+
+    // ================= Externals =================
+    createExternalByTitle: async (query: string) => {
+      const hwnds = await findWindowsByTitleSubstring(query);
+      if (!hwnds || hwnds.length === 0) return;
+      const hwnd = hwnds[0];
+      const phys = await getExternalWindowRect(hwnd);
+      const dpr = (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1);
+      const rect = phys ? {
+        x: phys.x / dpr,
+        y: phys.y / dpr,
+        width: phys.width / dpr,
+        height: phys.height / dpr,
+      } : { x: 200, y: 200, width: 640, height: 400 };
+      const id = `ext-${hwnd}`;
+      const maxZ = Math.max(0, ...Object.values(get().notes).map((n) => n.z), ...Object.values(get().externals || {}).map((e) => e.z));
+      const ext: ExternalWindow = {
+        id,
+        hwnd,
+        title: query,
+        rect,
+        z: maxZ + 1,
+        isBound: true,
+      };
+      set((state) => {
+        if (!state.externals) state.externals = {} as any;
+        state.externals[id] = ext;
+      });
+      debouncedPersist(get());
+    },
+
+    moveExternal: async (id: ID, rect: NoteRect) => {
+      set((state) => {
+        const e = state.externals?.[id];
+        if (e) e.rect = rect;
+      });
+      const e = get().externals?.[id];
+      if (e) {
+        const dpr = (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1);
+        await setExternalWindowRect(e.hwnd, {
+          x: rect.x * dpr,
+          y: rect.y * dpr,
+          width: rect.width * dpr,
+          height: rect.height * dpr,
+        });
+      }
+      debouncedPersist(get());
+    },
+
+    syncExternalFromOS: async (id: ID) => {
+      const e = get().externals?.[id];
+      if (!e) return;
+      const phys = await getExternalWindowRect(e.hwnd);
+      if (!phys) {
+        set((state) => {
+          if (state.externals?.[id]) state.externals[id].isBound = false;
+        });
+        return;
+      }
+      const dpr = (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1);
+      const rect = {
+        x: phys.x / dpr,
+        y: phys.y / dpr,
+        width: phys.width / dpr,
+        height: phys.height / dpr,
+      };
+      set((state) => {
+        if (state.externals?.[id]) {
+          state.externals[id].rect = rect;
+          state.externals[id].isBound = true;
+        }
+      });
+    },
+
+    toggleExternalHidden: (id: ID) => {
+      set((state) => {
+        const e = state.externals?.[id];
+        if (e) e.hidden = !e.hidden;
+      });
+    },
+
+    upsertExternalFromOS: (w: ExternalWinInfo) => {
+      const dpr = (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1);
+      const id = `ext-${w.hwnd}`;
+      const rect = {
+        x: w.x / dpr,
+        y: w.y / dpr,
+        width: w.width / dpr,
+        height: w.height / dpr,
+      };
+      set((state) => {
+        if (!state.externals) state.externals = {} as any;
+        const existing = state.externals[id];
+        state.externals[id] = existing ? {
+          ...existing,
+          rect,
+          isBound: true,
+          title: existing.title ?? w.title,
+          exe: existing.exe ?? w.exe,
+          className: existing.className ?? (w as any).class_name,
+        } : {
+          id,
+          hwnd: w.hwnd,
+          title: w.title,
+          exe: w.exe,
+          className: (w as any).class_name,
+          rect,
+          z: 1,
+          isBound: true,
+        } as ExternalWindow;
+      });
+    },
+
+    // Toggle all externals matching exe name visibility
+    // Example exeName: 'chrome.exe' (case-insensitive contains match)
+    toggleExternalGroupVisibility: (exeName: string, show: boolean) => {
+      set((state) => {
+        if (!state.externals) return;
+        const needle = exeName.toLowerCase();
+        Object.values(state.externals).forEach((e) => {
+          const exep = (e.exe || '').toLowerCase();
+          if (exep.includes(needle)) {
+            e.hidden = !show;
+          }
+        });
+      });
+      debouncedPersist(get());
+    },
+
+    reconcileExternalsFromScan: (currentHwnds: number[]) => {
+      set((state) => {
+        if (!state.externals) return;
+        const alive = new Set(currentHwnds.map((h) => `ext-${h}`));
+        Object.keys(state.externals).forEach((id) => {
+          if (!alive.has(id)) {
+            delete state.externals![id];
+          }
+        });
       });
     },
 

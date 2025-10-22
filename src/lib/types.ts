@@ -51,6 +51,7 @@ export type BoardState = {
   notes: Record<ID, NoteWindow>;
   links: Record<ID, Link>;
   ui: UIState;
+  externals?: Record<ID, ExternalWindow>;
 };
 
 // IPC event payloads
@@ -109,6 +110,19 @@ export type NoteHydrateEvent = {
 // Handshake readiness from Note → Board
 export type NoteReadyPayload = {
   id: ID; // the label id used by Board/IPC
+};
+
+// ================= External Windows (Windows-only surface) ================
+export type ExternalWindow = {
+  id: ID;                 // ext-<hwnd>
+  hwnd: number;           // HWND as u64 but JS number
+  title?: string;         // optional cached title
+  rect: NoteRect;         // logical CSS px on board
+  z: number;
+  isBound: boolean;       // true if HWND is still valid/visible
+  hidden?: boolean;       // board visibility toggle
+  exe?: string;           // process image path/name (Windows)
+  className?: string;     // window class name
 };
 
 // Utilities for tests

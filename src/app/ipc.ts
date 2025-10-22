@@ -26,6 +26,10 @@ export const IPC_EVENTS = {
   CLOSE_NOTE: 'close_note_window',
   PERSIST_LAYOUT: 'persist_layout',
   LOAD_LAYOUT: 'load_layout',
+  // External windows
+  FIND_EXTERNALS: 'find_windows_by_title_substring',
+  GET_EXTERNAL_RECT: 'get_external_window_rect',
+  SET_EXTERNAL_RECT: 'set_external_window_rect',
 
   // Note -> Board
   NOTE_MOVED: 'note:moved',
@@ -110,12 +114,66 @@ export async function loadLayout(): Promise<BoardState | null> {
   }
 }
 
+// ============================================================================
+// DPR helpers (logical CSS px ↔ physical px)
+// ============================================================================
+export const getDpr = () => ((typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1);
+export const toPhysical = (v: number) => v * getDpr();
+export const toLogical = (v: number) => v / getDpr();
+
+// ============================================================================
+// External windows IPC
+// ============================================================================
+export async function findWindowsByTitleSubstring(query: string): Promise<number[]> {
+  return await invoke<number[]>('find_windows_by_title_substring', { query });
+}
+
+export type ExternalRect = { x: number; y: number; width: number; height: number };
+
+export async function getExternalWindowRect(hwnd: number): Promise<ExternalRect | null> {
+  try {
+    const tuple = await invoke<[number, number, number, number]>('get_external_window_rect', { hwnd });
+    if (!tuple) return null;
+    const [x, y, width, height] = tuple; // physical px
+    return { x, y, width, height };
+  } catch (e) {
+    console.error('[IPC] getExternalWindowRect failed', e);
+    return null;
+  }
+}
+
+export async function setExternalWindowRect(hwnd: number, rect: ExternalRect): Promise<void> {
+  try {
+    const x = toPhysical(rect.x);
+    const y = toPhysical(rect.y);
+    const w = toPhysical(rect.width);
+    const h = toPhysical(rect.height);
+    await invoke<void>('set_external_window_rect', { hwnd, x, y, w, h });
+  } catch (e) {
+    console.error('[IPC] setExternalWindowRect failed', e);
+  }
+}
+
 // Move OS window to a CSS position (converted to physical pixels)
 export async function setNotePosition(rawId: string, cssX: number, cssY: number): Promise<void> {
   const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
   console.log('[IPC] setNotePosition using CSS coords', { id: rawId, css: { x: cssX, y: cssY }, dpr });
   await invoke('set_note_position', { id: rawId, x: cssX, y: cssY });
 }
+
+export async function setNoteSize(rawId: string, cssW: number, cssH: number): Promise<void> {
+  const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
+  console.log('[IPC] setNoteSize using CSS coords', { id: rawId, css: { width: cssW, height: cssH }, dpr });
+  await invoke('set_note_size', { id: rawId, width: cssW, height: cssH });
+}
+
+export async function setNoteRect(rawId: string, cssX: number, cssY: number, cssW: number, cssH: number): Promise<void> {
+  const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
+  console.log('[IPC] setNoteRect using CSS coords', { id: rawId, css: { x: cssX, y: cssY, width: cssW, height: cssH }, dpr });
+  await invoke('set_note_rect', { id: rawId, x: cssX, y: cssY, width: cssW, height: cssH });
+}
+
+// duplicates removed
 
 // ============================================================================
 // Event listeners (Board side)
@@ -227,4 +285,26 @@ export function emitPersistOk(): void {
 export function emitPersistFail(error?: string): void {
   tauriEmit(IPC_EVENTS.PERSIST_FAIL, error);
 }
+// ==========================================================================
+// External windows (Windows-only)
+// ==========================================================================
+
+export type ExternalWinInfo = {
+  hwnd: number;
+  title: string;
+  class_name: string;
+  pid: number;
+  exe: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export async function listTopLevelWindows(): Promise<ExternalWinInfo[]> {
+  return await invoke<ExternalWinInfo[]>('list_top_level_windows');
+}
+
+// Remove duplicate re-exports at file bottom
+
 
