@@ -15,6 +15,7 @@ import {
 } from '../app/ipc';
 import Grid from '../components/Board/Grid';
 import LinkLayer from '../components/Board/LinkLayer';
+import WindowLinkLayer from '../components/Board/WindowLinkLayer';
 import NoteGhosts from '../components/Board/NoteGhosts';
 import Topbar from '../components/Board/Topbar';
 import Toolbar from '../components/Board/Toolbar';
@@ -23,6 +24,8 @@ import AutoSaveToast from '../components/Toasts/AutoSaveToast';
 import type { NoteWindow } from '../lib/types';
 import NotesList from '../components/Board/NotesList';
 import { currentMonitor } from '@tauri-apps/api/window';
+import { spawnOverlay } from '../app/overlay';
+import { emitOverlayStateSync } from '../app/ipc';
 
 export default function BoardPage() {
   const initializeFromState = useBoardStore((state) => state.initializeFromState);
@@ -32,6 +35,9 @@ export default function BoardPage() {
   const bringNoteToFront = useBoardStore((state) => state.bringNoteToFront);
   const openNoteWindow = useBoardStore((state) => state.openNoteWindow);
   const notes = useBoardStore((state) => state.notes);
+  const links = useBoardStore((state) => state.links);
+  const showConnections = useBoardStore((state) => state.ui.windows.showConnections);
+  const connectStyle = useBoardStore((state) => state.ui.connectStyle);
   const sidebarCollapsed = useBoardStore((state) => state.ui.sidebarCollapsed);
   const allNotesArray = Object.values(notes);
 
@@ -64,6 +70,27 @@ export default function BoardPage() {
       }
     })();
   }, []);
+
+  // Spawn overlay window for desktop connections
+  useEffect(() => {
+    console.log('[BoardPage] Spawning overlay window...');
+    spawnOverlay().catch(err => {
+      console.error('[BoardPage] Failed to spawn overlay:', err);
+    });
+  }, []);
+
+  // Sync state to overlay whenever relevant state changes
+  useEffect(() => {
+    console.log('[BoardPage] Syncing state to overlay...');
+    emitOverlayStateSync({
+      notes,
+      links,
+      showConnections,
+      connectStyle,
+    }).catch(err => {
+      console.error('[BoardPage] Failed to sync to overlay:', err);
+    });
+  }, [notes, links, showConnections, connectStyle]);
 
   // Helper: wait for note:ready(id)
   function waitForNoteReady(id: string, ms: number): Promise<void> {
@@ -128,19 +155,10 @@ export default function BoardPage() {
 
     const setupListeners = async () => {
       listeners.push(await onNoteMoved((event) => {
-        if (process.env.NODE_ENV !== 'production') {
-          const dpr = window.devicePixelRatio || 1;
-          console.log('[BoardPage] onNoteMoved', event, 'store keys=', Object.keys(useBoardStore.getState().notes), 'dpr=', dpr);
-        }
-        // Use label id directly; store uses 'note-<id>' keys
         updateNoteRect(event.id, event.rect);
       }));
 
       listeners.push(await onNoteResized((event) => {
-        if (process.env.NODE_ENV !== 'production') {
-          const dpr = window.devicePixelRatio || 1;
-          console.log('[BoardPage] onNoteResized', event, 'store keys=', Object.keys(useBoardStore.getState().notes), 'dpr=', dpr);
-        }
         updateNoteRect(event.id, event.rect);
       }));
 
@@ -258,6 +276,7 @@ export default function BoardPage() {
             }}
           >
             <Grid />
+            <WindowLinkLayer scale={scale.factor} />
             <NoteGhosts scale={scale.factor} />
             <LinkLayer scale={scale.factor} />
             <Inspector />

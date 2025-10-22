@@ -58,6 +58,9 @@ export type UIState = {
       deletedAt: number;
     };
   };
+  windows: {
+    showConnections: boolean;     // controls WindowLinkLayer visibility (separate from board links)
+  };
 };
 
 export type BoardState = {

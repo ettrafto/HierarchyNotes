@@ -50,6 +50,7 @@ interface BoardStoreState extends BoardState {
   clearSelection: () => void;
   setGridDensity: (density: number) => void;
   toggleSidebar: () => void;
+  toggleWindowConnections: () => void;
   // Drag echo block to avoid polling feedback after we move OS window
   setDragEchoBlock: (id: ID, ms: number) => void;
   dragEchoBlock: Record<string, number>;
@@ -87,6 +88,9 @@ export const useBoardStore = create<BoardStoreState>()(
       focusedNoteId: null,
       trash: {},
       sidebarCollapsed: false,
+      windows: {
+        showConnections: true,
+      },
     },
     dragEchoBlock: {},
     linkingDraft: { sourceNoteId: null },
@@ -514,6 +518,12 @@ export const useBoardStore = create<BoardStoreState>()(
     toggleSidebar: () => {
       set((state) => {
         state.ui.sidebarCollapsed = !state.ui.sidebarCollapsed;
+      });
+    },
+
+    toggleWindowConnections: () => {
+      set((state) => {
+        state.ui.windows.showConnections = !state.ui.windows.showConnections;
       });
     },
 

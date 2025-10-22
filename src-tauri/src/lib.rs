@@ -82,6 +82,60 @@ async fn close_note_window(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Spawn the transparent overlay window for desktop connections
+#[tauri::command]
+async fn spawn_overlay_window(app: AppHandle) -> Result<(), String> {
+    let label = "overlay";
+    
+    // Check if already exists
+    if app.get_webview_window(label).is_some() {
+        println!("[spawn_overlay_window] Overlay already exists");
+        return Ok(());
+    }
+
+    println!("[spawn_overlay_window] Creating overlay window");
+    
+    let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::App("overlay.html".into()))
+        .title("Overlay")
+        .fullscreen(false)
+        .maximized(true)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(false)
+        .skip_taskbar(true)
+        .visible(true)
+        .build()
+        .map_err(|e| {
+            println!("[spawn_overlay_window] ERROR: {}", e);
+            e.to_string()
+        })?;
+    
+    println!("[spawn_overlay_window] Window built, getting handle...");
+    println!("[spawn_overlay_window] Window label: {}", window.label());
+    println!("[spawn_overlay_window] Window visible: {:?}", window.is_visible());
+
+    // Make the window ignore mouse events (click-through)
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT};
+        
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
+        
+        unsafe {
+            let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED.0 as isize | WS_EX_TRANSPARENT.0 as isize);
+        }
+        
+        println!("[spawn_overlay_window] Set WS_EX_TRANSPARENT flag");
+    }
+
+    println!("[spawn_overlay_window] Overlay created successfully");
+    Ok(())
+}
+
 /// Set a note window's position (physical pixels)
 #[tauri::command]
 async fn set_note_position(app: AppHandle, id: String, x: f64, y: f64) -> Result<(), String> {
@@ -127,6 +181,19 @@ async fn load_layout(app: AppHandle) -> Result<String, String> {
     Ok(json)
 }
 
+/// Broadcast state sync to all windows (especially overlay)
+#[tauri::command]
+async fn broadcast_overlay_state(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
+    println!("[broadcast_overlay_state] Emitting to all windows");
+    app.emit("overlay:state_sync", payload)
+        .map_err(|e| {
+            println!("[broadcast_overlay_state] ERROR: {}", e);
+            e.to_string()
+        })?;
+    println!("[broadcast_overlay_state] ✅ Emitted successfully");
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -142,11 +209,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             spawn_note_window,
+            spawn_overlay_window,
             focus_note_window,
             close_note_window,
             set_note_position,
             persist_layout,
             load_layout,
+            broadcast_overlay_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

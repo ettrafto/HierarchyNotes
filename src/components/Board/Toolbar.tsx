@@ -1,6 +1,6 @@
 // Toolbar component - mode and style controls
 
-import { MousePointer2, Link2, Grid3x3, Minus, Menu } from 'lucide-react';
+import { MousePointer2, Link2, Grid3x3, Minus, Menu, Eye, EyeOff } from 'lucide-react';
 import { useBoardStore } from '../../app/store';
 
 export default function Toolbar() {
@@ -10,6 +10,7 @@ export default function Toolbar() {
   const toggleSnapToGrid = useBoardStore((state) => state.toggleSnapToGrid);
   const setConnectStyle = useBoardStore((state) => state.setConnectStyle);
   const toggleSidebar = useBoardStore((state) => state.toggleSidebar);
+  const toggleWindowConnections = useBoardStore((state) => state.toggleWindowConnections);
 
   return (
     <div className="toolbar glass-effect">
@@ -67,6 +68,21 @@ export default function Toolbar() {
         >
           <Minus size={16} />
           <span>{ui.connectStyle === 'smooth' ? 'Smooth' : 'Orthogonal'}</span>
+        </button>
+      </div>
+
+      <div className="h-4 w-px bg-border" />
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={toggleWindowConnections}
+          className={`toolbar-button flex items-center gap-2 ${
+            ui.windows.showConnections ? 'toolbar-button-active' : ''
+          }`}
+          title={ui.windows.showConnections ? 'Hide window connections' : 'Show window connections'}
+        >
+          {ui.windows.showConnections ? <Eye size={16} /> : <EyeOff size={16} />}
+          <span>Window Links</span>
         </button>
       </div>
 

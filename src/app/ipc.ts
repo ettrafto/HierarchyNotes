@@ -1,7 +1,8 @@
 // Typed IPC helpers for communication between Board, Note windows, and Rust backend
 
 import { invoke } from '@tauri-apps/api/core';
-import { listen, emit as tauriEmit, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, emit as tauriEmit, type UnlistenFn, TauriEvent } from '@tauri-apps/api/event';
+import { emit as emitToAll } from '@tauri-apps/api/event';
 import type {
   SpawnNotePayload,
   FocusNotePayload,
@@ -46,6 +47,9 @@ export const IPC_EVENTS = {
   // Frontend-only persistence notifications
   PERSIST_OK: 'persist:ok',
   PERSIST_FAIL: 'persist:fail',
+
+  // Board -> Overlay
+  OVERLAY_STATE_SYNC: 'overlay:state_sync',
 } as const;
 
 // ============================================================================
@@ -226,5 +230,40 @@ export function emitPersistOk(): void {
 
 export function emitPersistFail(error?: string): void {
   tauriEmit(IPC_EVENTS.PERSIST_FAIL, error);
+}
+
+// ============================================================================
+// Overlay state sync
+// ============================================================================
+
+export type OverlayStateSyncPayload = {
+  notes: BoardState['notes'];
+  links: BoardState['links'];
+  showConnections: boolean;
+  connectStyle: 'smooth' | 'orthogonal';
+};
+
+export async function emitOverlayStateSync(payload: OverlayStateSyncPayload): Promise<void> {
+  console.log('[IPC] Emitting overlay state sync via Rust backend:', {
+    notesCount: Object.keys(payload.notes).length,
+    linksCount: Object.keys(payload.links).length,
+    showConnections: payload.showConnections,
+  });
+  
+  try {
+    // Use Rust backend to broadcast to all windows properly
+    await invoke('broadcast_overlay_state', { payload });
+    console.log('[IPC] ✅ State sync emitted successfully via Rust');
+  } catch (error) {
+    console.error('[IPC] ❌ Failed to emit state sync:', error);
+  }
+}
+
+export function onOverlayStateSync(
+  handler: (event: OverlayStateSyncPayload) => void
+): Promise<UnlistenFn> {
+  return listen<OverlayStateSyncPayload>(IPC_EVENTS.OVERLAY_STATE_SYNC, (e) =>
+    handler(e.payload)
+  );
 }
 

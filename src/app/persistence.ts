@@ -43,6 +43,13 @@ export async function loadBoardState(): Promise<BoardState | null> {
       });
     }
 
+    // Migrate UI state: add windows field if missing
+    if (state.ui && !(state.ui as any).windows) {
+      (state.ui as any).windows = {
+        showConnections: true,
+      };
+    }
+
     return state as BoardState;
   } catch (error) {
     console.error('Failed to load board state:', error);
@@ -137,6 +144,9 @@ export function createSampleData(): BoardState {
       selectedNoteIds: [],
       selectedLinkIds: [],
       gridDensity: 40,
+      windows: {
+        showConnections: true,
+      },
     },
   };
 }
