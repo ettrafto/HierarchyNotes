@@ -17,6 +17,7 @@ export type NoteWindow = {
   z: number;
   color?: string;         // muted accent color
   isOpen: boolean;        // whether native window exists
+  isActive?: boolean;     // whether note is active on Board (default true)
   hidden?: boolean;       // board visibility toggle
 };
 
@@ -42,6 +43,7 @@ export type Link = {
 
 export type UIMode = 'select' | 'connect';
 export type ConnectStyle = 'smooth' | 'orthogonal';
+export type WindowStyle = 'glass' | 'card' | 'slate';
 
 export type UIState = {
   mode: UIMode;
@@ -60,6 +62,7 @@ export type UIState = {
   };
   windows: {
     showConnections: boolean;     // controls WindowLinkLayer visibility (separate from board links)
+    style: WindowStyle;
   };
 };
 

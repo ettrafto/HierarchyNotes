@@ -69,27 +69,8 @@
     );
 }
 
-/* Note window styles */
-.note-window {
-  @apply bg-background border border-border rounded-2xl shadow-xl;
-  @apply flex flex-col overflow-hidden;
-}
-
-.note-window-focused {
-  @apply ring-2 ring-accent-foreground/20 shadow-2xl;
-}
-
-.note-title-bar {
-  @apply flex items-center justify-between px-4 py-3 border-b border-border;
-  @apply cursor-move select-none;
-  -webkit-app-region: drag;
-}
-
-.note-content {
-  @apply flex-1 p-4 overflow-auto;
-  @apply resize-none border-none outline-none bg-transparent;
-  @apply text-foreground;
-}
+/* Note window styles - now using dynamic theme system in windowThemes.ts */
+/* Legacy classes kept for backwards compatibility but no longer actively used */
 
 /* Link styles */
 .link-path {
@@ -154,5 +135,40 @@
 /* Focus ring */
 .focus-ring {
   @apply focus:outline-none focus:ring-2 focus:ring-accent-foreground/20;
+}
+
+/* Rounded clipping helper to eliminate hard corner artifacts */
+.rounded-clip-16 {
+  border-radius: 16px;
+  overflow: hidden;
+  /* Force clip on all engines */
+  clip-path: inset(0 round 16px);
+  /* Webkit antialiasing hint */
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  background-clip: padding-box;
+}
+
+.rounded-clip-12 {
+  border-radius: 12px;
+  overflow: hidden;
+  clip-path: inset(0 round 12px);
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  background-clip: padding-box;
+}
+
+/* Tauri drag region support */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Explicitly exclude from Tauri drag region */
+.no-drag {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+  -webkit-user-select: auto;
+  user-select: auto;
 }
 

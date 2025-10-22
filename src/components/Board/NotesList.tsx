@@ -11,7 +11,14 @@ export default function NotesList() {
   const [confirm, setConfirm] = useState<{ open: boolean; id?: string }>({ open: false });
 
   const items = useMemo(() => {
-    return Object.values(notes).sort((a, b) => a.title.localeCompare(b.title));
+    const sorted = Object.values(notes).sort((a, b) => a.title.localeCompare(b.title));
+    console.log('[NotesList] Rendering items:', sorted.map(n => ({
+      id: n.id,
+      title: n.title,
+      isOpen: n.isOpen,
+      isActive: n.isActive,
+    })));
+    return sorted;
   }, [notes]);
 
   return (
@@ -32,7 +39,17 @@ export default function NotesList() {
           >
             <div className="flex items-center gap-2 overflow-hidden">
               <div className="w-2 h-2 rounded-full" style={{ background: n.color || '#94a3b8' }} />
-              <span className="truncate">{n.title || 'Untitled'}</span>
+              <span 
+                className="truncate" 
+                style={{ opacity: n.isActive === false ? 0.5 : 1 }}
+              >
+                {n.title || 'Untitled'}
+              </span>
+              {n.isActive === false && (
+                <span className="text-[10px] px-1 py-0.5 bg-red-900/30 text-red-400 rounded" title="Inactive">
+                  inactive
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <span className="text-xs" title={n.isOpen ? 'Open' : 'Closed'}>{n.isOpen ? '●' : '○'}</span>

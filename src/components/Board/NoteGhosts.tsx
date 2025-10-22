@@ -4,19 +4,45 @@ import { setNotePosition } from '../../app/ipc';
 
 export default function NoteGhosts({ scale }: { scale: number }) {
   const notesRecord = useBoardStore((s) => s.notes);
-  const notes = useMemo(() => Object.values(notesRecord), [notesRecord]);
+  const notes = useMemo(() => {
+    const allNotes = Object.values(notesRecord);
+    console.log('[NoteGhosts] Rendering notes:', allNotes.map(n => ({
+      id: n.id,
+      title: n.title,
+      isOpen: n.isOpen,
+      isActive: n.isActive,
+    })));
+    return allNotes;
+  }, [notesRecord]);
 
 
   return (
     <div className="absolute inset-0" style={{ zIndex: 2 }}>
-      {notes.map((n) => (
-        <Ghost key={n.id} noteId={n.id} title={n.title} rect={n.rect} isOpen={!!n.isOpen} scale={scale} />
-      ))}
+      {notes.map((n) => {
+        const isActiveValue = n.isActive !== false;
+        console.log('[NoteGhosts] Rendering ghost for', n.id, {
+          title: n.title,
+          isOpen: !!n.isOpen,
+          isActive: isActiveValue,
+          rawIsActive: n.isActive,
+        });
+        return (
+          <Ghost 
+            key={n.id} 
+            noteId={n.id} 
+            title={n.title} 
+            rect={n.rect} 
+            isOpen={!!n.isOpen} 
+            isActive={isActiveValue} 
+            scale={scale} 
+          />
+        );
+      })}
     </div>
   );
 }
 
-function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: string; rect: { x: number; y: number; width: number; height: number }; isOpen: boolean; scale: number }) {
+function Ghost({ noteId, title, rect, isOpen, isActive, scale }: { noteId: string; title: string; rect: { x: number; y: number; width: number; height: number }; isOpen: boolean; isActive: boolean; scale: number }) {
   const startClient = useRef<{ x: number; y: number } | null>(null);
   const startRect = useRef<{ x: number; y: number } | null>(null);
   const lastClient = useRef<{ x: number; y: number } | null>(null);
@@ -146,11 +172,15 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
     }
   };
 
-  // Determine styling based on mode
+  // Determine styling based on mode and active state
   let borderStyle = isOpen ? '2px solid #00ffc8' : '1.5px dashed #777';
   let bgColor = isOpen ? 'rgba(0,255,200,0.18)' : 'rgba(255,255,255,0.06)';
   let boxShadow = isOpen ? '0 0 12px rgba(0,255,200,0.4)' : 'none';
   let cursorStyle = isDragging ? 'grabbing' : 'grab';
+  let titleOpacity = isOpen ? 0.9 : 0.7;
+  
+  // Inactive notes: no red tint, just keep default closed styling
+  // The [INACTIVE] label is enough visual indication
   
   if (isConnectMode) {
     cursorStyle = 'pointer';
@@ -197,13 +227,13 @@ function Ghost({ noteId, title, rect, isOpen, scale }: { noteId: string; title: 
         style={{
           fontSize: 12,
           fontWeight: 600,
-          color: isOpen ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.7)',
-          background: isOpen ? 'linear-gradient(to right, rgba(0,255,200,0.15), transparent)' : 'transparent',
+          color: `rgba(255,255,255,${titleOpacity})`,
+          background: isOpen && isActive ? 'linear-gradient(to right, rgba(0,255,200,0.15), transparent)' : 'transparent',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
           pointerEvents: 'none',
         }}
       >
-        {title || 'Untitled'}
+        {title || 'Untitled'}{!isActive && ' [INACTIVE]'}
       </div>
       {isOpen && (
         <div

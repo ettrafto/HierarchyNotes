@@ -79,10 +79,13 @@ export async function focusNoteWindow(payload: FocusNotePayload): Promise<void> 
 }
 
 export async function closeNoteWindow(payload: CloseNotePayload): Promise<void> {
+  console.log('[IPC] 🔴 closeNoteWindow called with:', payload);
   try {
+    console.log('[IPC] Invoking Rust close_note_window...');
     await invoke('close_note_window', payload);
+    console.log('[IPC] Rust close_note_window completed');
   } catch (error) {
-    console.error('Failed to close note window:', error);
+    console.error('[IPC] Failed to close note window:', error);
     throw error;
   }
 }

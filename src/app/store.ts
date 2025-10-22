@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { nanoid } from 'nanoid';
-import type { BoardState, NoteWindow, Link, NoteRect, ID, UIMode, ConnectStyle } from '../lib/types';
+import type { BoardState, NoteWindow, Link, NoteRect, ID, UIMode, ConnectStyle, WindowStyle } from '../lib/types';
 import { saveBoardState } from './persistence';
 import { debounce } from '../lib/utils';
 import { spawnNoteWindow, closeNoteWindow, focusNoteWindow, onNoteReady, emitNoteHydrate } from './ipc';
@@ -51,6 +51,9 @@ interface BoardStoreState extends BoardState {
   setGridDensity: (density: number) => void;
   toggleSidebar: () => void;
   toggleWindowConnections: () => void;
+  cycleWindowStyle: () => void;
+  setWindowStyle: (style: WindowStyle) => void;
+  setNoteActive: (id: ID, active: boolean) => void;
   // Drag echo block to avoid polling feedback after we move OS window
   setDragEchoBlock: (id: ID, ms: number) => void;
   dragEchoBlock: Record<string, number>;
@@ -90,6 +93,7 @@ export const useBoardStore = create<BoardStoreState>()(
       sidebarCollapsed: false,
       windows: {
         showConnections: true,
+        style: 'glass',
       },
     },
     dragEchoBlock: {},
@@ -113,6 +117,7 @@ export const useBoardStore = create<BoardStoreState>()(
         },
         z: maxZ + 1,
         isOpen: false,
+        isActive: true,
       };
 
       set((state) => {
@@ -194,6 +199,7 @@ export const useBoardStore = create<BoardStoreState>()(
 
         set((state) => {
           state.notes[id].isOpen = true;
+          state.notes[id].isActive = true; // Mark as active when opened
           state.ui.focusedNoteId = id;
         });
         console.log('[Store] Note window spawned and hydrated:', id);
@@ -211,7 +217,10 @@ export const useBoardStore = create<BoardStoreState>()(
       try {
         await closeNoteWindow({ id });
         set((state) => {
-          if (state.notes[id]) state.notes[id].isOpen = false;
+          if (state.notes[id]) {
+            state.notes[id].isOpen = false;
+            state.notes[id].isActive = false; // Mark as inactive on Board
+          }
         });
         debouncedPersist(get());
       } catch (error) {
@@ -322,10 +331,25 @@ export const useBoardStore = create<BoardStoreState>()(
     markNoteClosedFromOS: (id: ID) => {
       set((state) => {
         if (state.notes[id]) {
-          state.notes[id].isOpen = false;
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('[Store] markNoteClosedFromOS', id);
-          }
+          const note = state.notes[id];
+          console.log('[Store] markNoteClosedFromOS BEFORE:', {
+            id,
+            title: note.title,
+            isOpen: note.isOpen,
+            isActive: note.isActive,
+          });
+          
+          note.isOpen = false;
+          note.isActive = false; // Mark as inactive on Board
+          
+          console.log('[Store] markNoteClosedFromOS AFTER:', {
+            id,
+            title: note.title,
+            isOpen: note.isOpen,
+            isActive: note.isActive,
+          });
+        } else {
+          console.warn('[Store] markNoteClosedFromOS - note not found:', id);
         }
       });
       debouncedPersist(get());
@@ -525,6 +549,29 @@ export const useBoardStore = create<BoardStoreState>()(
       set((state) => {
         state.ui.windows.showConnections = !state.ui.windows.showConnections;
       });
+    },
+
+    cycleWindowStyle: () => {
+      set((state) => {
+        const order: WindowStyle[] = ['glass', 'card', 'slate'];
+        const idx = order.indexOf(state.ui.windows.style);
+        state.ui.windows.style = order[(idx + 1) % order.length];
+      });
+    },
+
+    setWindowStyle: (style: WindowStyle) => {
+      set((state) => {
+        state.ui.windows.style = style;
+      });
+    },
+
+    setNoteActive: (id: ID, active: boolean) => {
+      set((state) => {
+        if (state.notes[id]) {
+          state.notes[id].isActive = active;
+        }
+      });
+      debouncedPersist(get());
     },
 
     setDragEchoBlock: (id: ID, ms: number) => {

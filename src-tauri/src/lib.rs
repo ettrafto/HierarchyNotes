@@ -43,13 +43,14 @@ async fn spawn_note_window(app: AppHandle, id: String, rect: NoteRect) -> Result
 
     // Create the window (treat rect values as CSS pixels and let Tauri scale according to platform)
     // Log received rect for debugging drift
+    // Using decorations(false) for custom chrome with rounded corners
     println!("[spawn_note_window] id={} rect=({},{},{},{})", label, rect.x, rect.y, rect.width, rect.height);
     WebviewWindowBuilder::new(&app, label.clone(), WebviewUrl::App("note.html".into()))
         .title("Note")
         .inner_size(rect.width, rect.height)
         .position(rect.x, rect.y)
         .resizable(true)
-        .decorations(true)
+        .decorations(false)
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -203,8 +204,11 @@ pub fn run() {
             if let WindowEvent::Destroyed = event {
                 // Emit note:closed with id derived from label
                 let label = window.label().to_string();
-                let id = label.strip_prefix("note-").unwrap_or(&label).to_string();
-                let _ = window.app_handle().emit("note:closed", serde_json::json!({ "id": id }));
+                // IMPORTANT: Keep the full label (e.g., "note-abc123") as the ID
+                // because the store uses the label as the key, not the raw ID
+                println!("[Rust] 🔴 WindowEvent::Destroyed - label: {}", label);
+                let _ = window.app_handle().emit("note:closed", serde_json::json!({ "id": label }));
+                println!("[Rust] 🔴 Emitted note:closed event with id: {}", label);
             }
         })
         .invoke_handler(tauri::generate_handler![

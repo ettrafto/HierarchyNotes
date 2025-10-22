@@ -1,6 +1,6 @@
 // Toolbar component - mode and style controls
 
-import { MousePointer2, Link2, Grid3x3, Minus, Menu, Eye, EyeOff } from 'lucide-react';
+import { MousePointer2, Link2, Grid3x3, Minus, Menu, Eye, EyeOff, Sparkles } from 'lucide-react';
 import { useBoardStore } from '../../app/store';
 
 export default function Toolbar() {
@@ -11,6 +11,7 @@ export default function Toolbar() {
   const setConnectStyle = useBoardStore((state) => state.setConnectStyle);
   const toggleSidebar = useBoardStore((state) => state.toggleSidebar);
   const toggleWindowConnections = useBoardStore((state) => state.toggleWindowConnections);
+  const cycleWindowStyle = useBoardStore((state) => state.cycleWindowStyle);
 
   return (
     <div className="toolbar glass-effect">
@@ -83,6 +84,15 @@ export default function Toolbar() {
         >
           {ui.windows.showConnections ? <Eye size={16} /> : <EyeOff size={16} />}
           <span>Window Links</span>
+        </button>
+
+        <button
+          onClick={cycleWindowStyle}
+          className="toolbar-button flex items-center gap-2"
+          title="Cycle window style (glass → card → slate)"
+        >
+          <Sparkles size={16} />
+          <span className="capitalize">{ui.windows.style}</span>
         </button>
       </div>
 

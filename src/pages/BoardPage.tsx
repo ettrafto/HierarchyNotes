@@ -167,7 +167,17 @@ export default function BoardPage() {
       }));
 
       listeners.push(await onNoteClosed((event) => {
-        useBoardStore.getState().markNoteClosedFromOS(event.id);
+        console.log('[BoardPage] ⚠️ note:closed event received:', event);
+        const state = useBoardStore.getState();
+        console.log('[BoardPage] Current note state BEFORE markNoteClosedFromOS:', {
+          id: event.id,
+          note: state.notes[event.id],
+        });
+        state.markNoteClosedFromOS(event.id);
+        console.log('[BoardPage] Current note state AFTER markNoteClosedFromOS:', {
+          id: event.id,
+          note: state.notes[event.id],
+        });
       }));
 
       listeners.push(await onNoteContentChanged((event) => {
