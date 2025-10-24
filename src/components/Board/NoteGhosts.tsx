@@ -5,6 +5,7 @@ import { debug } from '../../lib/debug';
 
 export default function NoteGhosts({ scale }: { scale: number }) {
   const notesRecord = useBoardStore((s) => s.notes);
+  const resizeDrafts = useBoardStore((s) => s.ui.resizeDrafts);
   const notes = useMemo(() => {
     const allNotes = Object.values(notesRecord);
     debug.log('RENDER', '[NoteGhosts] Rendering notes:', allNotes.map(n => ({
@@ -32,7 +33,7 @@ export default function NoteGhosts({ scale }: { scale: number }) {
             key={n.id} 
             noteId={n.id} 
             title={n.title} 
-            rect={n.rect} 
+            rect={resizeDrafts?.[n.id] ?? n.rect} 
             isOpen={!!n.isOpen} 
             isActive={isActiveValue} 
             scale={scale} 

@@ -23,6 +23,7 @@ export default function NoteFrame({ id, scale }: Props) {
   const update = useBoardStore((s) => s.updateResizeDraft);
   const commit = useBoardStore((s) => s.commitResizeDraft);
   const cancel = useBoardStore((s) => s.cancelResizeDraft);
+  const setSelectedNotes = useBoardStore((s) => s.setSelectedNotes);
 
   const [isDragging, setIsDragging] = useState(false);
 
@@ -41,9 +42,9 @@ export default function NoteFrame({ id, scale }: Props) {
 
   const rect = draft ?? note.rect;
   
-  // In resize mode with selection, container captures events for edges
+  // In resize mode, container captures events for edges
   // Otherwise, pass through to NoteGhosts below
-  const containerPointerEvents = (selected && mode === 'resize') ? 'auto' : 'none';
+  const containerPointerEvents = (mode === 'resize') ? 'auto' : 'none';
   
   const containerStyle: React.CSSProperties = {
     position: 'absolute',
@@ -58,6 +59,13 @@ export default function NoteFrame({ id, scale }: Props) {
 
   function startResize(handle: Handle, startX: number, startY: number) {
     debug.log('RESIZE', `[NoteFrame] startResize ${id}`, { handle, startX, startY, scale });
+    
+    // Auto-select this note when starting to resize
+    if (!selected) {
+      debug.log('RESIZE', `[NoteFrame] Auto-selecting note ${id}`);
+      setSelectedNotes([id]);
+    }
+    
     setIsDragging(true);
     const base = draft ?? note.rect;
     const isNoteOpen = note.isOpen; // Capture current state
@@ -71,7 +79,19 @@ export default function NoteFrame({ id, scale }: Props) {
         const dy = (ev.clientY - startY) / scale;
         let next = resizeFromHandle(base, dx, dy, handle);
         if (snapToGrid) next = snapRectFullToGrid(next, gridDensity);
-        debug.log('RESIZE', `[NoteFrame] Update resize`, { dx, dy, next });
+        debug.log('RESIZE', `[NoteFrame] Update resize`, { 
+          evClientX: ev.clientX, 
+          evClientY: ev.clientY,
+          startX, 
+          startY,
+          rawDx: ev.clientX - startX,
+          rawDy: ev.clientY - startY,
+          dx, 
+          dy, 
+          base,
+          next,
+          scale
+        });
         update(id, next);
       } catch (err) {
         debug.error('RESIZE', `[NoteFrame] Error in onMove`, err);
@@ -113,9 +133,9 @@ export default function NoteFrame({ id, scale }: Props) {
     debug.log('RESIZE', `[NoteFrame] Event listeners attached`);
   }
 
-  // Only show resize edges when selected and in resize mode
-  if (!selected || mode !== 'resize') {
-    debug.log('RESIZE', `[NoteFrame] Not showing edges for ${id}`, { selected, mode });
+  // Only show resize edges when in resize mode
+  if (mode !== 'resize') {
+    debug.log('RESIZE', `[NoteFrame] Not showing edges for ${id}`, { mode });
     return null; // Don't render anything when not in resize mode
   }
 
@@ -140,7 +160,7 @@ export default function NoteFrame({ id, scale }: Props) {
       style={containerStyle} 
       onClick={(e) => {
         // Prevent clicks in the center from bubbling to NoteGhosts when in resize mode
-        if (selected && mode === 'resize') {
+        if (mode === 'resize') {
           debug.log('RESIZE', `[NoteFrame] Container clicked, stopping propagation`);
           e.stopPropagation();
         }
@@ -157,7 +177,15 @@ export default function NoteFrame({ id, scale }: Props) {
             backgroundColor: 'transparent',
           }}
           onMouseDown={(e) => {
-            debug.log('RESIZE', `[NoteFrame] Edge mousedown`, { handle, noteId: id, button: e.button });
+            debug.log('RESIZE', `[NoteFrame] Edge mousedown`, { 
+              handle, 
+              noteId: id, 
+              button: e.button,
+              clientX: e.clientX,
+              clientY: e.clientY,
+              scale,
+              noteRect: note.rect
+            });
             e.stopPropagation();
             e.preventDefault();
             startResize(handle, e.clientX, e.clientY);
