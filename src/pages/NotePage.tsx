@@ -15,6 +15,7 @@ import {
 } from '../app/ipc';
 import NoteShell from '../components/Note/NoteShell';
 import type { NoteHydrateEvent, NoteRect } from '../lib/types';
+import { debug } from '../lib/debug';
 
 export default function NotePage() {
   const [noteData, setNoteData] = useState<NoteHydrateEvent | null>(null);
@@ -30,21 +31,21 @@ export default function NotePage() {
     const labelId = windowRef.current.label; // e.g., 'note-4' (matches store keys)
     const rawId = labelId.startsWith('note-') ? labelId.replace(/^note-/, '') : labelId;
     const storeId = labelId; // use label as store id for all IPC
-    console.log('[NotePage] Mounted', { labelId, rawId, storeId });
+    debug.log('NOTE_PAGE', '[NotePage] Mounted', { labelId, rawId, storeId });
 
     // Listen for hydration event FIRST, then signal readiness
     let unlisten: (() => void) | null = null;
     const setupHydration = async () => {
       unlisten = await onNoteHydrate((event) => {
-        console.log('[NotePage] note:hydrate received', event, 'expect id=', storeId);
+        debug.log('NOTE_PAGE', '[NotePage] note:hydrate received', event, 'expect id=', storeId);
         if (event.id === storeId) {
-          console.log('[NotePage] Hydrating', storeId);
+          debug.log('NOTE_PAGE', '[NotePage] Hydrating', storeId);
           setNoteData(event);
         }
       });
       // Immediately declare readiness to Board, then keep request_hydrate for backward-compat
       if (process.env.NODE_ENV !== 'production') {
-        console.log('[NotePage] note:ready =>', storeId);
+        debug.log('NOTE_PAGE', '[NotePage] note:ready =>', storeId);
       }
       emitNoteReady({ id: storeId });
       // Fallback (older Board): request hydrate
@@ -52,7 +53,7 @@ export default function NotePage() {
       // Retry once after 1s if still not hydrated
       hydrationRetryTimeout.current = window.setTimeout(() => {
         if (!noteData) {
-          console.log('[NotePage] note:request_hydrate RETRY =>', storeId);
+          debug.log('NOTE_PAGE', '[NotePage] note:request_hydrate RETRY =>', storeId);
           emitNoteRequestHydrate({ id: storeId });
         }
       }, 1000);
@@ -89,25 +90,25 @@ export default function NotePage() {
         let changed = false;
         if (!lastRect || lastRect.x !== currentRect.x || lastRect.y !== currentRect.y) {
           if (process.env.NODE_ENV !== 'production') {
-            console.log('[NotePage] emit note:moved', { id: storeId, rect: currentRect, dpr, raw: { position, size } });
+            debug.log('WINDOW_POSITION', '[NotePage] emit note:moved', { id: storeId, rect: currentRect, dpr, raw: { position, size } });
           }
           tauriEmit('note:moved', { id: storeId, rect: currentRect });
           changed = true;
         }
         if (!lastRect || lastRect.width !== currentRect.width || lastRect.height !== currentRect.height) {
           if (process.env.NODE_ENV !== 'production') {
-            console.log('[NotePage] emit note:resized', { id: storeId, rect: currentRect, dpr, raw: { position, size } });
+            debug.log('WINDOW_POSITION', '[NotePage] emit note:resized', { id: storeId, rect: currentRect, dpr, raw: { position, size } });
           }
           tauriEmit('note:resized', { id: storeId, rect: currentRect });
           changed = true;
         }
         if (changed && process.env.NODE_ENV !== 'production') {
-          console.log('[NotePage] rect changed', { prev: lastRect, next: currentRect });
+          debug.log('WINDOW_POSITION', '[NotePage] rect changed', { prev: lastRect, next: currentRect });
         }
         lastRect = currentRect;
         return changed;
       } catch (error) {
-        console.error('[NotePage] Error checking window position:', error);
+        debug.forceError('[NotePage] Error checking window position:', error);
         return false;
       }
     };

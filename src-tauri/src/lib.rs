@@ -7,6 +7,13 @@ use tauri::Position;
 use std::fs;
 use std::path::PathBuf;
 
+// Debug flags - set to true to enable console logging for specific modules
+const DEBUG_WINDOW_SPAWN: bool = false;
+const DEBUG_WINDOW_POSITION: bool = false;
+const DEBUG_WINDOW_LIFECYCLE: bool = false;
+const DEBUG_OVERLAY: bool = false;
+const DEBUG_IPC: bool = false;
+
 #[derive(Debug, Serialize, Deserialize)]
 struct NoteRect {
     x: f64,
@@ -44,7 +51,9 @@ async fn spawn_note_window(app: AppHandle, id: String, rect: NoteRect) -> Result
     // Create the window (treat rect values as CSS pixels and let Tauri scale according to platform)
     // Log received rect for debugging drift
     // Using decorations(false) for custom chrome with rounded corners
-    println!("[spawn_note_window] id={} rect=({},{},{},{})", label, rect.x, rect.y, rect.width, rect.height);
+    if DEBUG_WINDOW_SPAWN {
+        println!("[spawn_note_window] id={} rect=({},{},{},{})", label, rect.x, rect.y, rect.width, rect.height);
+    }
     WebviewWindowBuilder::new(&app, label.clone(), WebviewUrl::App("note.html".into()))
         .title("Note")
         .inner_size(rect.width, rect.height)
@@ -90,11 +99,15 @@ async fn spawn_overlay_window(app: AppHandle) -> Result<(), String> {
     
     // Check if already exists
     if app.get_webview_window(label).is_some() {
-        println!("[spawn_overlay_window] Overlay already exists");
+        if DEBUG_OVERLAY {
+            println!("[spawn_overlay_window] Overlay already exists");
+        }
         return Ok(());
     }
 
-    println!("[spawn_overlay_window] Creating overlay window");
+    if DEBUG_OVERLAY {
+        println!("[spawn_overlay_window] Creating overlay window");
+    }
     
     let window = WebviewWindowBuilder::new(&app, label, WebviewUrl::App("overlay.html".into()))
         .title("Overlay")
@@ -108,13 +121,15 @@ async fn spawn_overlay_window(app: AppHandle) -> Result<(), String> {
         .visible(true)
         .build()
         .map_err(|e| {
-            println!("[spawn_overlay_window] ERROR: {}", e);
+            if DEBUG_OVERLAY {
+                println!("[spawn_overlay_window] ERROR: {}", e);
+            }
             e.to_string()
         })?;
     
-    println!("[spawn_overlay_window] Window built, getting handle...");
-    println!("[spawn_overlay_window] Window label: {}", window.label());
-    println!("[spawn_overlay_window] Window visible: {:?}", window.is_visible());
+    if DEBUG_OVERLAY {
+        println!("[spawn_overlay_window] Window built successfully");
+    }
 
     // Make the window ignore mouse events (click-through)
     #[cfg(target_os = "windows")]
@@ -130,10 +145,14 @@ async fn spawn_overlay_window(app: AppHandle) -> Result<(), String> {
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED.0 as isize | WS_EX_TRANSPARENT.0 as isize);
         }
         
-        println!("[spawn_overlay_window] Set WS_EX_TRANSPARENT flag");
+        if DEBUG_OVERLAY {
+            println!("[spawn_overlay_window] Set WS_EX_TRANSPARENT flag");
+        }
     }
-
-    println!("[spawn_overlay_window] Overlay created successfully");
+    
+    if DEBUG_OVERLAY {
+        println!("[spawn_overlay_window] Overlay created successfully");
+    }
     Ok(())
 }
 
@@ -143,7 +162,9 @@ async fn set_note_position(app: AppHandle, id: String, x: f64, y: f64) -> Result
     // Accept either raw id or label id
     let label = if id.starts_with("note-") { id.clone() } else { format!("note-{}", id) };
     if let Some(window) = app.get_webview_window(&label) {
-        println!("[set_note_position] id={} pos=({}, {})", label, x, y);
+        if DEBUG_WINDOW_POSITION {
+            println!("[set_note_position] id={} pos=({}, {})", label, x, y);
+        }
         window
             .set_position(Position::Logical((x, y).into()))
             .map_err(|e| e.to_string())?;
@@ -185,13 +206,33 @@ async fn load_layout(app: AppHandle) -> Result<String, String> {
 /// Broadcast state sync to all windows (especially overlay)
 #[tauri::command]
 async fn broadcast_overlay_state(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
-    println!("[broadcast_overlay_state] Emitting to all windows");
     app.emit("overlay:state_sync", payload)
         .map_err(|e| {
-            println!("[broadcast_overlay_state] ERROR: {}", e);
+            if DEBUG_IPC {
+                println!("[broadcast_overlay_state] ERROR: {}", e);
+            }
             e.to_string()
         })?;
-    println!("[broadcast_overlay_state] ✅ Emitted successfully");
+    Ok(())
+}
+
+/// Atomically resize and move a note window (fallback for Board-side resize)
+#[tauri::command]
+async fn resize_move_note_window(app: AppHandle, id: String, rect: NoteRect) -> Result<(), String> {
+    let label = format!("note-{}", id);
+    let window = app.get_webview_window(&label).ok_or("Window not found")?;
+    
+    // Try to move then resize; order may reduce artifacts depending on OS/WM
+    window.set_position(Position::Logical(tauri::LogicalPosition { 
+        x: rect.x, 
+        y: rect.y 
+    })).map_err(|e| e.to_string())?;
+    
+    window.set_size(tauri::LogicalSize { 
+        width: rect.width, 
+        height: rect.height 
+    }).map_err(|e| e.to_string())?;
+    
     Ok(())
 }
 
@@ -206,9 +247,13 @@ pub fn run() {
                 let label = window.label().to_string();
                 // IMPORTANT: Keep the full label (e.g., "note-abc123") as the ID
                 // because the store uses the label as the key, not the raw ID
-                println!("[Rust] 🔴 WindowEvent::Destroyed - label: {}", label);
+                if DEBUG_WINDOW_LIFECYCLE {
+                    println!("[Rust] 🔴 WindowEvent::Destroyed - label: {}", label);
+                }
                 let _ = window.app_handle().emit("note:closed", serde_json::json!({ "id": label }));
-                println!("[Rust] 🔴 Emitted note:closed event with id: {}", label);
+                if DEBUG_WINDOW_LIFECYCLE {
+                    println!("[Rust] 🔴 Emitted note:closed event with id: {}", label);
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -217,6 +262,7 @@ pub fn run() {
             focus_note_window,
             close_note_window,
             set_note_position,
+            resize_move_note_window,
             persist_layout,
             load_layout,
             broadcast_overlay_state,

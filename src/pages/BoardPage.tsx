@@ -1,7 +1,7 @@
 // BoardPage - main board view with grid and link layer
 
 import { useEffect, useRef, useState } from 'react';
-import { useBoardStore } from '../app/store';
+import { useBoardStore, resizingViaBoard } from '../app/store';
 import { loadBoardState, saveBoardState, createSampleData } from '../app/persistence';
 import {
   onNoteMoved,
@@ -17,15 +17,16 @@ import Grid from '../components/Board/Grid';
 import LinkLayer from '../components/Board/LinkLayer';
 import WindowLinkLayer from '../components/Board/WindowLinkLayer';
 import NoteGhosts from '../components/Board/NoteGhosts';
+import NoteFrame from '../components/Board/NoteFrame';
 import Topbar from '../components/Board/Topbar';
 import Toolbar from '../components/Board/Toolbar';
-import Inspector from '../components/Board/Inspector';
 import AutoSaveToast from '../components/Toasts/AutoSaveToast';
 import type { NoteWindow } from '../lib/types';
 import NotesList from '../components/Board/NotesList';
 import { currentMonitor } from '@tauri-apps/api/window';
 import { spawnOverlay } from '../app/overlay';
 import { emitOverlayStateSync } from '../app/ipc';
+import { debug } from '../lib/debug';
 
 export default function BoardPage() {
   const initializeFromState = useBoardStore((state) => state.initializeFromState);
@@ -63,32 +64,32 @@ export default function BoardPage() {
         const factor = Math.min(scaleX, scaleY);
         setScale({ factor, width: screenWidth, height: screenHeight });
         if (process.env.NODE_ENV !== 'production') {
-          console.log('[BoardPage] useScreenScale', { screenWidth, screenHeight, boardWidth, boardHeight, factor });
+          debug.log('BOARD_PAGE', '[BoardPage] useScreenScale', { screenWidth, screenHeight, boardWidth, boardHeight, factor });
         }
       } catch (e) {
-        console.warn('[BoardPage] currentMonitor failed', e);
+        debug.warn('BOARD_PAGE', '[BoardPage] currentMonitor failed', e);
       }
     })();
   }, []);
 
   // Spawn overlay window for desktop connections
   useEffect(() => {
-    console.log('[BoardPage] Spawning overlay window...');
+    debug.log('OVERLAY', '[BoardPage] Spawning overlay window...');
     spawnOverlay().catch(err => {
-      console.error('[BoardPage] Failed to spawn overlay:', err);
+      debug.forceError('[BoardPage] Failed to spawn overlay:', err);
     });
   }, []);
 
   // Sync state to overlay whenever relevant state changes
   useEffect(() => {
-    console.log('[BoardPage] Syncing state to overlay...');
+    debug.log('OVERLAY', '[BoardPage] Syncing state to overlay...');
     emitOverlayStateSync({
       notes,
       links,
       showConnections,
       connectStyle,
     }).catch(err => {
-      console.error('[BoardPage] Failed to sync to overlay:', err);
+      debug.forceError('[BoardPage] Failed to sync to overlay:', err);
     });
   }, [notes, links, showConnections, connectStyle]);
 
@@ -116,14 +117,14 @@ export default function BoardPage() {
   useEffect(() => {
     const initializeBoard = async () => {
       
-      console.log('[BoardPage] Initializing board...');
+      debug.log('BOARD_PAGE', '[BoardPage] Initializing board...');
       const savedState = await loadBoardState();
-      console.log('[BoardPage] Loaded state:', savedState);
+      debug.log('BOARD_PAGE', '[BoardPage] Loaded state:', savedState);
 
       const store = useBoardStore.getState();
 
       if (savedState && Object.keys(savedState.notes).length > 0) {
-        console.log('[BoardPage] Loading saved state with', Object.keys(savedState.notes).length, 'notes');
+        debug.log('BOARD_PAGE', '[BoardPage] Loading saved state with', Object.keys(savedState.notes).length, 'notes');
         
         // Reset isOpen flag for all notes (windows aren't actually open on startup)
         Object.values(savedState.notes).forEach(note => {
@@ -134,18 +135,18 @@ export default function BoardPage() {
         // Do not auto-open on boot in this pass
       } else {
         // First run - create sample data
-        console.log('[BoardPage] No saved state, creating sample data');
+        debug.log('BOARD_PAGE', '[BoardPage] No saved state, creating sample data');
         const sampleData = createSampleData();
-        console.log('[BoardPage] Sample data created with', Object.keys(sampleData.notes).length, 'notes');
+        debug.log('BOARD_PAGE', '[BoardPage] Sample data created with', Object.keys(sampleData.notes).length, 'notes');
         store.initializeFromState(sampleData);
         await saveBoardState(sampleData);
         // Do not auto-open on first run in this pass
       }
-      console.log('[BoardPage] Initialization complete');
+      debug.log('BOARD_PAGE', '[BoardPage] Initialization complete');
     };
 
     initializeBoard().catch(err => {
-      console.error('[BoardPage] Initialization error:', err);
+      debug.forceError('[BoardPage] Initialization error:', err);
     });
   }, []); // Empty deps - only run once on mount
 
@@ -159,6 +160,13 @@ export default function BoardPage() {
       }));
 
       listeners.push(await onNoteResized((event) => {
+        // Event loop protection: ignore one event if this was triggered by Board-side resize
+        const rawId = event.id.replace(/^note-/, '');
+        if (resizingViaBoard.has(rawId)) {
+          // Treat as ACK of our programmatic resize, don't double-commit
+          resizingViaBoard.delete(rawId);
+          return;
+        }
         updateNoteRect(event.id, event.rect);
       }));
 
@@ -167,14 +175,14 @@ export default function BoardPage() {
       }));
 
       listeners.push(await onNoteClosed((event) => {
-        console.log('[BoardPage] ⚠️ note:closed event received:', event);
+        debug.log('WINDOW_LIFECYCLE', '[BoardPage] ⚠️ note:closed event received:', event);
         const state = useBoardStore.getState();
-        console.log('[BoardPage] Current note state BEFORE markNoteClosedFromOS:', {
+        debug.log('WINDOW_LIFECYCLE', '[BoardPage] Current note state BEFORE markNoteClosedFromOS:', {
           id: event.id,
           note: state.notes[event.id],
         });
         state.markNoteClosedFromOS(event.id);
-        console.log('[BoardPage] Current note state AFTER markNoteClosedFromOS:', {
+        debug.log('WINDOW_LIFECYCLE', '[BoardPage] Current note state AFTER markNoteClosedFromOS:', {
           id: event.id,
           note: state.notes[event.id],
         });
@@ -208,12 +216,15 @@ export default function BoardPage() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Escape to cancel connect mode
+      // Escape to cancel connect or resize mode
       if (e.key === 'Escape') {
         const state = useBoardStore.getState();
         if (state.ui.mode === 'connect') {
           e.preventDefault();
           state.cancelConnect();
+        } else if (state.ui.mode === 'resize') {
+          e.preventDefault();
+          state.setMode('select');
         }
         return;
       }
@@ -289,7 +300,12 @@ export default function BoardPage() {
             <WindowLinkLayer scale={scale.factor} />
             <NoteGhosts scale={scale.factor} />
             <LinkLayer scale={scale.factor} />
-            <Inspector />
+            {/* Frames with resize handles */}
+            <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 50 }}>
+              {allNotesArray.map((n) => (
+                <NoteFrame key={n.id} id={n.id} scale={scale.factor} />
+              ))}
+            </div>
             {/* Empty state */}
             {allNotesArray.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

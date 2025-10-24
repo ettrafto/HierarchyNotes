@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useBoardStore } from '../../app/store';
 import ConfirmDialog from './ConfirmDialog';
+import { debug } from '../../lib/debug';
 
 export default function NotesList() {
   const notes = useBoardStore((s) => s.notes);
@@ -12,7 +13,7 @@ export default function NotesList() {
 
   const items = useMemo(() => {
     const sorted = Object.values(notes).sort((a, b) => a.title.localeCompare(b.title));
-    console.log('[NotesList] Rendering items:', sorted.map(n => ({
+    debug.log('RENDER', '[NotesList] Rendering items:', sorted.map(n => ({
       id: n.id,
       title: n.title,
       isOpen: n.isOpen,
@@ -45,11 +46,6 @@ export default function NotesList() {
               >
                 {n.title || 'Untitled'}
               </span>
-              {n.isActive === false && (
-                <span className="text-[10px] px-1 py-0.5 bg-red-900/30 text-red-400 rounded" title="Inactive">
-                  inactive
-                </span>
-              )}
             </div>
             <div className="flex items-center gap-3">
               <span className="text-xs" title={n.isOpen ? 'Open' : 'Closed'}>{n.isOpen ? '●' : '○'}</span>

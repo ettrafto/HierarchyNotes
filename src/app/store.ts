@@ -7,6 +7,7 @@ import type { BoardState, NoteWindow, Link, NoteRect, ID, UIMode, ConnectStyle, 
 import { saveBoardState } from './persistence';
 import { debounce } from '../lib/utils';
 import { spawnNoteWindow, closeNoteWindow, focusNoteWindow, onNoteReady, emitNoteHydrate } from './ipc';
+import { debug } from '../lib/debug';
 
 interface LinkingDraft {
   sourceNoteId: ID | null;
@@ -58,6 +59,13 @@ interface BoardStoreState extends BoardState {
   setDragEchoBlock: (id: ID, ms: number) => void;
   dragEchoBlock: Record<string, number>;
 
+  // Board-side resize actions
+  beginResizeDraft: (id: ID, rect: NoteRect) => void;
+  updateResizeDraft: (id: ID, rect: NoteRect) => void;
+  commitResizeDraft: (id: ID) => NoteRect | undefined;
+  cancelResizeDraft: (id: ID) => void;
+  setNoteRect: (id: ID, rect: NoteRect) => void;
+
   initializeFromState: (state: BoardState) => void;
   resetToSampleLayout: () => void;
 
@@ -75,6 +83,9 @@ const debouncedPersist = debounce((state: BoardState) => {
 
 // Track in-flight window spawns to avoid duplicate spawns under StrictMode
 const inflightOpens = new Set<string>();
+
+// Guard to prevent feedback loops when the Board resizes a Note window
+export const resizingViaBoard = new Set<string /* rawId */>();
 
 export const useBoardStore = create<BoardStoreState>()(
   immer((set, get) => ({
@@ -95,6 +106,7 @@ export const useBoardStore = create<BoardStoreState>()(
         showConnections: true,
         style: 'glass',
       },
+      resizeDrafts: {},
     },
     dragEchoBlock: {},
     linkingDraft: { sourceNoteId: null },
@@ -142,27 +154,27 @@ export const useBoardStore = create<BoardStoreState>()(
     openNoteWindow: async (id: ID) => {
       const openingKey = `open:${id}`;
       if (inflightOpens.has(openingKey)) {
-        console.log('[Store] openNoteWindow already in-flight for', id);
+        debug.log('STORE', '[Store] openNoteWindow already in-flight for', id);
         return;
       }
       inflightOpens.add(openingKey);
 
       // Use the exact id key present in state
       const note = get().notes[id];
-      console.log('[Store] openNoteWindow called for:', id, 'note:', note);
+      debug.log('STORE', '[Store] openNoteWindow called for:', id, 'note:', note);
       if (!note) {
-        console.warn('[Store] Note not found:', id);
+        debug.warn('STORE', '[Store] Note not found:', id);
         inflightOpens.delete(openingKey);
         return;
       }
       if (note.isOpen) {
-        console.log('[Store] Note window already open:', id);
+        debug.log('STORE', '[Store] Note window already open:', id);
         inflightOpens.delete(openingKey);
         return;
       }
 
       try {
-        console.log('[Store] Spawning window for note:', id, 'rect:', note.rect);
+        debug.log('WINDOW_LIFECYCLE', '[Store] Spawning window for note:', id, 'rect:', note.rect);
         await spawnNoteWindow({ id, rect: note.rect });
 
         // Wait for note:ready handshake, retry once
@@ -192,7 +204,7 @@ export const useBoardStore = create<BoardStoreState>()(
         const current = get().notes[id];
         if (current) {
           if (process.env.NODE_ENV !== 'production') {
-            console.log('[Store] emitNoteHydrate after spawn', { id, rect: current.rect });
+            debug.log('STORE', '[Store] emitNoteHydrate after spawn', { id, rect: current.rect });
           }
           emitNoteHydrate({ id, title: current.title, content: current.content, color: current.color });
         }
@@ -202,9 +214,9 @@ export const useBoardStore = create<BoardStoreState>()(
           state.notes[id].isActive = true; // Mark as active when opened
           state.ui.focusedNoteId = id;
         });
-        console.log('[Store] Note window spawned and hydrated:', id);
+        debug.log('WINDOW_LIFECYCLE', '[Store] Note window spawned and hydrated:', id);
       } catch (error) {
-        console.error('[Store] Failed to open note window:', id, error);
+        debug.forceError('[Store] Failed to open note window:', id, error);
       } finally {
         inflightOpens.delete(openingKey);
       }
@@ -224,7 +236,7 @@ export const useBoardStore = create<BoardStoreState>()(
         });
         debouncedPersist(get());
       } catch (error) {
-        console.error('[Store] Failed to close note window:', id, error);
+        debug.forceError('[Store] Failed to close note window:', id, error);
       }
     },
 
@@ -236,7 +248,7 @@ export const useBoardStore = create<BoardStoreState>()(
       } else {
         await get().openNoteWindow(id);
         // Focus after opening
-        focusNoteWindow({ id }).catch(console.error);
+        focusNoteWindow({ id }).catch((err) => debug.forceError('[Store] Failed to focus window:', id, err));
       }
     },
 
@@ -332,7 +344,7 @@ export const useBoardStore = create<BoardStoreState>()(
       set((state) => {
         if (state.notes[id]) {
           const note = state.notes[id];
-          console.log('[Store] markNoteClosedFromOS BEFORE:', {
+          debug.log('WINDOW_LIFECYCLE', '[Store] markNoteClosedFromOS BEFORE:', {
             id,
             title: note.title,
             isOpen: note.isOpen,
@@ -342,14 +354,14 @@ export const useBoardStore = create<BoardStoreState>()(
           note.isOpen = false;
           note.isActive = false; // Mark as inactive on Board
           
-          console.log('[Store] markNoteClosedFromOS AFTER:', {
+          debug.log('WINDOW_LIFECYCLE', '[Store] markNoteClosedFromOS AFTER:', {
             id,
             title: note.title,
             isOpen: note.isOpen,
             isActive: note.isActive,
           });
         } else {
-          console.warn('[Store] markNoteClosedFromOS - note not found:', id);
+          debug.warn('STORE', '[Store] markNoteClosedFromOS - note not found:', id);
         }
       });
       debouncedPersist(get());
@@ -383,7 +395,7 @@ export const useBoardStore = create<BoardStoreState>()(
 
       // Also focus the window
       if (note.isOpen) {
-        focusNoteWindow({ id }).catch(console.error);
+        focusNoteWindow({ id }).catch((err) => debug.forceError('[Store] Failed to focus window:', id, err));
       }
     },
 
@@ -581,6 +593,64 @@ export const useBoardStore = create<BoardStoreState>()(
       });
     },
 
+    // Board-side resize actions
+    beginResizeDraft: (id: ID, rect: NoteRect) => {
+      debug.log('RESIZE', `[Store] beginResizeDraft`, { id, rect });
+      set((state) => {
+        // Ensure resizeDrafts exists
+        if (!state.ui.resizeDrafts) {
+          state.ui.resizeDrafts = {};
+        }
+        state.ui.resizeDrafts[id] = rect;
+      });
+    },
+
+    updateResizeDraft: (id: ID, rect: NoteRect) => {
+      debug.log('RESIZE', `[Store] updateResizeDraft`, { id, rect });
+      set((state) => {
+        // Ensure resizeDrafts exists
+        if (!state.ui.resizeDrafts) {
+          state.ui.resizeDrafts = {};
+        }
+        if (state.ui.resizeDrafts[id]) {
+          state.ui.resizeDrafts[id] = rect;
+        }
+      });
+    },
+
+    commitResizeDraft: (id: ID): NoteRect | undefined => {
+      const draft = get().ui.resizeDrafts?.[id];
+      debug.log('RESIZE', `[Store] commitResizeDraft`, { id, draft });
+      if (!draft) return undefined;
+      set((state) => {
+        const n = state.notes[id];
+        if (n) n.rect = draft;
+        if (state.ui.resizeDrafts) {
+          state.ui.resizeDrafts[id] = undefined;
+        }
+      });
+      debouncedPersist(get());
+      return draft;
+    },
+
+    cancelResizeDraft: (id: ID) => {
+      debug.log('RESIZE', `[Store] cancelResizeDraft`, { id });
+      set((state) => {
+        if (state.ui.resizeDrafts) {
+          state.ui.resizeDrafts[id] = undefined;
+        }
+      });
+    },
+
+    setNoteRect: (id: ID, rect: NoteRect) => {
+      debug.log('RESIZE', `[Store] setNoteRect`, { id, rect });
+      set((state) => {
+        const n = state.notes[id];
+        if (n) n.rect = rect;
+      });
+      debouncedPersist(get());
+    },
+
     // State management
     initializeFromState: (state: BoardState) => {
       set(() => state);
@@ -592,7 +662,7 @@ export const useBoardStore = create<BoardStoreState>()(
         // Close all existing windows
         Object.keys(state.notes).forEach((id) => {
           if (state.notes[id].isOpen) {
-            closeNoteWindow({ id }).catch(console.error);
+            closeNoteWindow({ id }).catch((err) => debug.forceError('[Store] Failed to close window:', id, err));
           }
         });
 

@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import { useBoardStore } from '../../app/store';
 import { setNotePosition } from '../../app/ipc';
+import { debug } from '../../lib/debug';
 
 export default function NoteGhosts({ scale }: { scale: number }) {
   const notesRecord = useBoardStore((s) => s.notes);
   const notes = useMemo(() => {
     const allNotes = Object.values(notesRecord);
-    console.log('[NoteGhosts] Rendering notes:', allNotes.map(n => ({
+    debug.log('RENDER', '[NoteGhosts] Rendering notes:', allNotes.map(n => ({
       id: n.id,
       title: n.title,
       isOpen: n.isOpen,
@@ -20,7 +21,7 @@ export default function NoteGhosts({ scale }: { scale: number }) {
     <div className="absolute inset-0" style={{ zIndex: 2 }}>
       {notes.map((n) => {
         const isActiveValue = n.isActive !== false;
-        console.log('[NoteGhosts] Rendering ghost for', n.id, {
+        debug.log('RENDER', '[NoteGhosts] Rendering ghost for', n.id, {
           title: n.title,
           isOpen: !!n.isOpen,
           isActive: isActiveValue,
@@ -74,7 +75,7 @@ function Ghost({ noteId, title, rect, isOpen, isActive, scale }: { noteId: strin
     const dyCss = (e.clientY - startClient.current.y) / scale;
     const nextX = Math.round(startRect.current.x + dxCss);
     const nextY = Math.round(startRect.current.y + dyCss);
-    useBoardStore.getState().updateNoteRect(noteId, { ...rect, x: nextX, y: nextY }, { fromDrag: true });
+    useBoardStore.getState().updateNoteRect(noteId, { ...rect, x: nextX, y: nextY });
     lastClient.current = { x: e.clientX, y: e.clientY };
     // Mark as drag if movement exceeds small threshold (2 CSS px)
     if (!didDrag.current) {
@@ -97,7 +98,7 @@ function Ghost({ noteId, title, rect, isOpen, isActive, scale }: { noteId: strin
     setIsDragging(false);
 
     // Update store immediately
-    useBoardStore.getState().updateNoteRect(noteId, { ...rect, x: nextX, y: nextY }, { fromDrag: true });
+    useBoardStore.getState().updateNoteRect(noteId, { ...rect, x: nextX, y: nextY });
     useBoardStore.getState().setDragEchoBlock(noteId, 300);
 
     // Only move OS window if it's open
@@ -105,7 +106,7 @@ function Ghost({ noteId, title, rect, isOpen, isActive, scale }: { noteId: strin
       try {
         await setNotePosition(noteId, nextX, nextY);
       } catch (err) {
-        console.warn('[Ghost] setNotePosition failed', noteId, err);
+        debug.warn('WINDOW_POSITION', '[Ghost] setNotePosition failed', noteId, err);
       }
     }
   };
@@ -160,10 +161,18 @@ function Ghost({ noteId, title, rect, isOpen, isActive, scale }: { noteId: strin
       return;
     }
     
-    // Default behavior: toggle window
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[Ghost] toggle window', noteId, { wasOpen: isOpen });
+    // Handle resize mode - only select, don't activate
+    if (store.ui.mode === 'resize') {
+      // Just select the note, don't toggle window
+      const currentSelection = store.ui.selectedNoteIds;
+      if (!currentSelection.includes(noteId)) {
+        store.setSelectedNotes([noteId]);
+      }
+      return;
     }
+    
+    // Default behavior: toggle window
+    debug.log('WINDOW_LIFECYCLE', '[Ghost] toggle window', noteId, { wasOpen: isOpen });
     if (isOpen) {
       await store.closeNoteWindowAction(noteId);
     } else {
@@ -233,7 +242,7 @@ function Ghost({ noteId, title, rect, isOpen, isActive, scale }: { noteId: strin
           pointerEvents: 'none',
         }}
       >
-        {title || 'Untitled'}{!isActive && ' [INACTIVE]'}
+        {title || 'Untitled'}
       </div>
       {isOpen && (
         <div

@@ -3,6 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, emit as tauriEmit, type UnlistenFn, TauriEvent } from '@tauri-apps/api/event';
 import { emit as emitToAll } from '@tauri-apps/api/event';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type {
   SpawnNotePayload,
   FocusNotePayload,
@@ -17,7 +18,9 @@ import type {
   NoteContentChangedEvent,
   NoteHydrateEvent,
   NoteReadyPayload,
+  NoteRect,
 } from '../lib/types';
+import { debug } from '../lib/debug';
 
 // Event channel names
 export const IPC_EVENTS = {
@@ -57,14 +60,14 @@ export const IPC_EVENTS = {
 // ============================================================================
 
 export async function spawnNoteWindow(payload: SpawnNotePayload): Promise<void> {
-  console.log('[IPC] spawnNoteWindow called with:', payload);
+  debug.log('IPC', '[IPC] spawnNoteWindow called with:', payload);
   try {
     const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
-    console.log('[IPC] spawnNoteWindow using CSS coords', { css: payload.rect, dpr });
+    debug.log('IPC', '[IPC] spawnNoteWindow using CSS coords', { css: payload.rect, dpr });
     await invoke('spawn_note_window', payload);
-    console.log('[IPC] spawnNoteWindow completed for:', payload.id);
+    debug.log('IPC', '[IPC] spawnNoteWindow completed for:', payload.id);
   } catch (error) {
-    console.error('[IPC] Failed to spawn note window:', error);
+    debug.forceError('[IPC] Failed to spawn note window:', error);
     throw error;
   }
 }
@@ -73,19 +76,19 @@ export async function focusNoteWindow(payload: FocusNotePayload): Promise<void> 
   try {
     await invoke('focus_note_window', payload);
   } catch (error) {
-    console.error('Failed to focus note window:', error);
+    debug.forceError('[IPC] Failed to focus note window:', error);
     throw error;
   }
 }
 
 export async function closeNoteWindow(payload: CloseNotePayload): Promise<void> {
-  console.log('[IPC] 🔴 closeNoteWindow called with:', payload);
+  debug.log('IPC', '[IPC] 🔴 closeNoteWindow called with:', payload);
   try {
-    console.log('[IPC] Invoking Rust close_note_window...');
+    debug.log('IPC', '[IPC] Invoking Rust close_note_window...');
     await invoke('close_note_window', payload);
-    console.log('[IPC] Rust close_note_window completed');
+    debug.log('IPC', '[IPC] Rust close_note_window completed');
   } catch (error) {
-    console.error('[IPC] Failed to close note window:', error);
+    debug.forceError('[IPC] Failed to close note window:', error);
     throw error;
   }
 }
@@ -101,7 +104,7 @@ export async function persistLayout(payload: PersistLayoutPayload): Promise<void
       await invoke('persist_layout', { boardState: payload.boardState });
     }
   } catch (error) {
-    console.error('Failed to persist layout:', error);
+    debug.forceError('[IPC] Failed to persist layout:', error);
     throw error;
   }
 }
@@ -112,7 +115,7 @@ export async function loadLayout(): Promise<BoardState | null> {
     if (!result) return null;
     return JSON.parse(result) as BoardState;
   } catch (error) {
-    console.error('Failed to load layout:', error);
+    debug.forceError('[IPC] Failed to load layout:', error);
     return null;
   }
 }
@@ -120,8 +123,31 @@ export async function loadLayout(): Promise<BoardState | null> {
 // Move OS window to a CSS position (converted to physical pixels)
 export async function setNotePosition(rawId: string, cssX: number, cssY: number): Promise<void> {
   const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
-  console.log('[IPC] setNotePosition using CSS coords', { id: rawId, css: { x: cssX, y: cssY }, dpr });
+  debug.log('WINDOW_POSITION', '[IPC] setNotePosition using CSS coords', { id: rawId, css: { x: cssX, y: cssY }, dpr });
   await invoke('set_note_position', { id: rawId, x: cssX, y: cssY });
+}
+
+// Move and resize OS window atomically (for Board-side resize)
+export async function moveResizeNoteWindow(rawId: string, rect: NoteRect): Promise<void> {
+  const label = `note-${rawId}`;
+  debug.log('RESIZE', `[IPC] moveResizeNoteWindow called`, { rawId, label, rect });
+
+  // Preferred path: JS API (Tauri v2) – do both position and size "atomically" by awaiting sequentially.
+  const win = WebviewWindow.getByLabel(label);
+  if (win) {
+    debug.log('RESIZE', `[IPC] Using JS API (window found)`);
+    // To minimize flicker, move first then size (or vice versa depending on platform).
+    await win.setPosition({ x: Math.round(rect.x), y: Math.round(rect.y) });
+    debug.log('RESIZE', `[IPC] Position set`);
+    await win.setSize({ width: Math.round(rect.width), height: Math.round(rect.height) });
+    debug.log('RESIZE', `[IPC] Size set, done`);
+    return;
+  }
+
+  // Fallback: single native command that does both on the Rust side (add below).
+  debug.log('RESIZE', `[IPC] Window not found, using Rust fallback`);
+  await invoke('resize_move_note_window', { id: rawId, rect });
+  debug.log('RESIZE', `[IPC] Rust command completed`);
 }
 
 // ============================================================================
@@ -247,7 +273,7 @@ export type OverlayStateSyncPayload = {
 };
 
 export async function emitOverlayStateSync(payload: OverlayStateSyncPayload): Promise<void> {
-  console.log('[IPC] Emitting overlay state sync via Rust backend:', {
+  debug.log('IPC', '[IPC] Emitting overlay state sync via Rust backend:', {
     notesCount: Object.keys(payload.notes).length,
     linksCount: Object.keys(payload.links).length,
     showConnections: payload.showConnections,
@@ -256,9 +282,9 @@ export async function emitOverlayStateSync(payload: OverlayStateSyncPayload): Pr
   try {
     // Use Rust backend to broadcast to all windows properly
     await invoke('broadcast_overlay_state', { payload });
-    console.log('[IPC] ✅ State sync emitted successfully via Rust');
+    debug.log('IPC', '[IPC] ✅ State sync emitted successfully via Rust');
   } catch (error) {
-    console.error('[IPC] ❌ Failed to emit state sync:', error);
+    debug.forceError('[IPC] ❌ Failed to emit state sync:', error);
   }
 }
 

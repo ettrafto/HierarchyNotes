@@ -41,7 +41,7 @@ export type Link = {
   label?: string;
 };
 
-export type UIMode = 'select' | 'connect';
+export type UIMode = 'select' | 'connect' | 'resize';
 export type ConnectStyle = 'smooth' | 'orthogonal';
 export type WindowStyle = 'glass' | 'card' | 'slate';
 
@@ -64,6 +64,7 @@ export type UIState = {
     showConnections: boolean;     // controls WindowLinkLayer visibility (separate from board links)
     style: WindowStyle;
   };
+  resizeDrafts: Record<ID, NoteRect | undefined>;  // per-note resize draft while dragging from Board
 };
 
 export type BoardState = {

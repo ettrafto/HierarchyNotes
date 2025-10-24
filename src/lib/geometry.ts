@@ -117,3 +117,80 @@ export function snapRectToGrid(rect: NoteRect, gridSize: number): NoteRect {
   };
 }
 
+/**
+ * Handle positions for resizing (8 handles: corners + sides)
+ */
+export type Handle =
+  | 'n' | 's' | 'e' | 'w'
+  | 'ne' | 'nw' | 'se' | 'sw';
+
+/**
+ * Compute new rect based on dragging a handle
+ */
+export function resizeFromHandle(
+  base: NoteRect,
+  dx: number,
+  dy: number,
+  handle: Handle,
+  minW = 120,
+  minH = 80
+): NoteRect {
+  let { x, y, width, height } = base;
+  
+  switch (handle) {
+    case 'e':
+      width += dx;
+      break;
+    case 'w':
+      x += dx;
+      width -= dx;
+      break;
+    case 's':
+      height += dy;
+      break;
+    case 'n':
+      y += dy;
+      height -= dy;
+      break;
+    case 'ne':
+      width += dx;
+      y += dy;
+      height -= dy;
+      break;
+    case 'nw':
+      x += dx;
+      width -= dx;
+      y += dy;
+      height -= dy;
+      break;
+    case 'se':
+      width += dx;
+      height += dy;
+      break;
+    case 'sw':
+      x += dx;
+      width -= dx;
+      height += dy;
+      break;
+  }
+  
+  // Enforce minimum size
+  width = Math.max(width, minW);
+  height = Math.max(height, minH);
+  
+  return { x, y, width, height };
+}
+
+/**
+ * Snap all dimensions of a rect to grid (position + size)
+ */
+export function snapRectFullToGrid(rect: NoteRect, grid = 16): NoteRect {
+  const snap = (v: number) => Math.round(v / grid) * grid;
+  return {
+    x: snap(rect.x),
+    y: snap(rect.y),
+    width: Math.max(grid, snap(rect.width)),
+    height: Math.max(grid, snap(rect.height)),
+  };
+}
+

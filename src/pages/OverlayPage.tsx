@@ -4,16 +4,12 @@ import { useMemo, useState, useEffect } from 'react';
 import { onOverlayStateSync, type OverlayStateSyncPayload } from '../app/ipc';
 import { nearestAnchors } from '../lib/geometry';
 import { buildPath } from '../lib/path';
-
-// Debug flag - set to true to enable verbose console logging
-const DEBUG = false;
+import { DEBUG, debug } from '../lib/debug';
 
 export default function OverlayPage() {
-  if (DEBUG) {
-    console.log('╔═══════════════════════════════════════════╗');
-    console.log('║  OverlayPage Component Rendering          ║');
-    console.log('╚═══════════════════════════════════════════╝');
-  }
+  debug.log('OVERLAY_PAGE', '╔═══════════════════════════════════════════╗');
+  debug.log('OVERLAY_PAGE', '║  OverlayPage Component Rendering          ║');
+  debug.log('OVERLAY_PAGE', '╚═══════════════════════════════════════════╝');
 
   // Local state synced from Board via IPC
   const [state, setState] = useState<OverlayStateSyncPayload>({
@@ -27,121 +23,111 @@ export default function OverlayPage() {
 
   // Listen for state sync from Board
   useEffect(() => {
-    if (DEBUG) {
-      console.log('╔═══════════════════════════════════════════╗');
-      console.log('║  [Overlay] Setting up IPC listener        ║');
-      console.log('╚═══════════════════════════════════════════╝');
-    }
+    debug.log('OVERLAY_PAGE', '╔═══════════════════════════════════════════╗');
+    debug.log('OVERLAY_PAGE', '║  [Overlay] Setting up IPC listener        ║');
+    debug.log('OVERLAY_PAGE', '╚═══════════════════════════════════════════╝');
     
     let unlisten: (() => void) | null = null;
     
     onOverlayStateSync((payload) => {
-      if (DEBUG) {
-        console.log('╔═══════════════════════════════════════════╗');
-        console.log('║  [Overlay] STATE SYNC RECEIVED            ║');
-        console.log('╠═══════════════════════════════════════════╣');
-        console.log('  Notes count:', Object.keys(payload.notes).length);
-        console.log('  Links count:', Object.keys(payload.links).length);
-        console.log('  Show connections:', payload.showConnections);
-        console.log('  Connect style:', payload.connectStyle);
-        
-        const openNotes = Object.values(payload.notes).filter(n => n.isOpen);
-        console.log('  Open windows:', openNotes.length);
-        openNotes.forEach(n => {
-          console.log(`    - ${n.id}: rect=`, n.rect);
+      debug.log('OVERLAY_PAGE', '╔═══════════════════════════════════════════╗');
+      debug.log('OVERLAY_PAGE', '║  [Overlay] STATE SYNC RECEIVED            ║');
+      debug.log('OVERLAY_PAGE', '╠═══════════════════════════════════════════╣');
+      debug.log('OVERLAY_PAGE', '  Notes count:', Object.keys(payload.notes).length);
+      debug.log('OVERLAY_PAGE', '  Links count:', Object.keys(payload.links).length);
+      debug.log('OVERLAY_PAGE', '  Show connections:', payload.showConnections);
+      debug.log('OVERLAY_PAGE', '  Connect style:', payload.connectStyle);
+      
+      const openNotes = Object.values(payload.notes).filter(n => n.isOpen);
+      debug.log('OVERLAY_PAGE', '  Open windows:', openNotes.length);
+      openNotes.forEach(n => {
+        debug.log('OVERLAY_PAGE', `    - ${n.id}: rect=`, n.rect);
+      });
+      
+      if (Object.keys(payload.links).length > 0) {
+        debug.log('OVERLAY_PAGE', '  Links:');
+        Object.values(payload.links).forEach(link => {
+          debug.log('OVERLAY_PAGE', `    - ${link.id}: ${(link.source as any).id} -> ${(link.target as any).id}`);
         });
-        
-        if (Object.keys(payload.links).length > 0) {
-          console.log('  Links:');
-          Object.values(payload.links).forEach(link => {
-            console.log(`    - ${link.id}: ${(link.source as any).id} -> ${(link.target as any).id}`);
-          });
-        }
-        
-        console.log('╚═══════════════════════════════════════════╝');
       }
+      
+      debug.log('OVERLAY_PAGE', '╚═══════════════════════════════════════════╝');
       
       setState(payload);
       setSyncCount(c => c + 1);
     }).then((fn) => {
       unlisten = fn;
-      if (DEBUG) console.log('✅ [Overlay] IPC listener registered successfully');
+      debug.log('OVERLAY_PAGE', '✅ [Overlay] IPC listener registered successfully');
     }).catch((err) => {
-      console.error('❌ [Overlay] Failed to register IPC listener:', err);
+      debug.forceError('❌ [Overlay] Failed to register IPC listener:', err);
     });
 
     return () => {
-      if (DEBUG) console.log('[Overlay] Cleaning up IPC listener');
+      debug.log('OVERLAY_PAGE', '[Overlay] Cleaning up IPC listener');
       if (unlisten) unlisten();
     };
   }, []);
 
-  if (DEBUG) {
-    console.log('[Overlay] Render - sync count:', syncCount, 'state:', {
-      notes: Object.keys(state.notes).length,
-      links: Object.keys(state.links).length,
-    });
-  }
+  debug.log('OVERLAY_PAGE', '[Overlay] Render - sync count:', syncCount, 'state:', {
+    notes: Object.keys(state.notes).length,
+    links: Object.keys(state.links).length,
+  });
 
   const { notes, links, showConnections: show, connectStyle } = state;
 
   const paths = useMemo(() => {
-    if (DEBUG) {
-      console.log('[Overlay useMemo] Computing paths...');
-      console.log('  Show:', show);
-      console.log('  Links:', Object.keys(links).length);
-      console.log('  Notes:', Object.keys(notes).length);
-    }
+    debug.log('CONNECTIONS', '[Overlay useMemo] Computing paths...');
+    debug.log('CONNECTIONS', '  Show:', show);
+    debug.log('CONNECTIONS', '  Links:', Object.keys(links).length);
+    debug.log('CONNECTIONS', '  Notes:', Object.keys(notes).length);
     
     if (!show) {
-      if (DEBUG) console.log('  ❌ Show is false, returning empty array');
+      debug.log('CONNECTIONS', '  ❌ Show is false, returning empty array');
       return [];
     }
 
     const linksArray = Object.values(links);
-    if (DEBUG) console.log('  Processing', linksArray.length, 'links');
+    debug.log('CONNECTIONS', '  Processing', linksArray.length, 'links');
 
     const result = linksArray
       .map((link, idx) => {
-        if (DEBUG) console.log(`  [Path ${idx}] Link ${link.id}`);
+        debug.log('CONNECTIONS', `  [Path ${idx}] Link ${link.id}`);
         
         if (link.source.kind !== 'note' || link.target.kind !== 'note') {
-          if (DEBUG) console.log(`    ❌ Not note-to-note`);
+          debug.log('CONNECTIONS', `    ❌ Not note-to-note`);
           return null;
         }
         
         const sourceNote = notes[link.source.id];
         const targetNote = notes[link.target.id];
 
-        if (DEBUG) {
-          console.log(`    Source (${link.source.id}):`, sourceNote ? 'exists' : 'MISSING', sourceNote?.isOpen ? 'OPEN' : 'closed');
-          console.log(`    Target (${link.target.id}):`, targetNote ? 'exists' : 'MISSING', targetNote?.isOpen ? 'OPEN' : 'closed');
-        }
+        debug.log('CONNECTIONS', `    Source (${link.source.id}):`, sourceNote ? 'exists' : 'MISSING', sourceNote?.isOpen ? 'OPEN' : 'closed');
+        debug.log('CONNECTIONS', `    Target (${link.target.id}):`, targetNote ? 'exists' : 'MISSING', targetNote?.isOpen ? 'OPEN' : 'closed');
 
         if (!sourceNote || !targetNote) {
-          if (DEBUG) console.log(`    ❌ Missing note(s)`);
+          debug.log('CONNECTIONS', `    ❌ Missing note(s)`);
           return null;
         }
         
         if (!sourceNote.isOpen || !targetNote.isOpen) {
-          if (DEBUG) console.log(`    ❌ Not both open`);
+          debug.log('CONNECTIONS', `    ❌ Not both open`);
           return null;
         }
 
         const { source, target } = nearestAnchors(sourceNote.rect, targetNote.rect);
         const pathData = buildPath(source, target, connectStyle);
 
-        if (DEBUG) console.log(`    ✅ Path computed: ${pathData.substring(0, 50)}...`);
+        debug.log('CONNECTIONS', `    ✅ Path computed: ${pathData.substring(0, 50)}...`);
 
         return { link, pathData };
       })
       .filter(p => p !== null);
     
-    if (DEBUG) console.log('[Overlay useMemo] Result:', result.length, 'paths');
+    debug.log('CONNECTIONS', '[Overlay useMemo] Result:', result.length, 'paths');
     return result;
   }, [links, notes, connectStyle, show]);
 
-  if (DEBUG) console.log('[Overlay] Final render - paths:', paths.length, 'show:', show);
+  debug.log('OVERLAY_PAGE', '[Overlay] Final render - paths:', paths.length, 'show:', show);
 
   return (
     <div 
@@ -187,7 +173,7 @@ export default function OverlayPage() {
           
           const { link, pathData } = item;
           
-          if (DEBUG) console.log(`[Overlay RENDER] Drawing path ${idx} for link ${link.id}`);
+          debug.log('CONNECTIONS', `[Overlay RENDER] Drawing path ${idx} for link ${link.id}`);
 
           return (
             <g key={link.id}>

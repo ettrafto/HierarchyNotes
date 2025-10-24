@@ -1,6 +1,6 @@
 // Toolbar component - mode and style controls
 
-import { MousePointer2, Link2, Grid3x3, Minus, Menu, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { MousePointer2, Link2, Grid3x3, Minus, Menu, Eye, EyeOff, Sparkles, Maximize2 } from 'lucide-react';
 import { useBoardStore } from '../../app/store';
 
 export default function Toolbar() {
@@ -45,6 +45,17 @@ export default function Toolbar() {
         >
           <Link2 size={16} />
           <span>Connect</span>
+        </button>
+
+        <button
+          onClick={() => setMode('resize')}
+          className={`toolbar-button flex items-center gap-2 ${
+            ui.mode === 'resize' ? 'toolbar-button-active' : ''
+          }`}
+          title="Resize mode"
+        >
+          <Maximize2 size={16} />
+          <span>Resize</span>
         </button>
       </div>
 
@@ -96,7 +107,7 @@ export default function Toolbar() {
         </button>
       </div>
 
-      {/* Connect mode hint */}
+      {/* Mode hints */}
       {ui.mode === 'connect' && (
         <>
           <div className="h-4 w-px bg-border" />
@@ -106,6 +117,17 @@ export default function Toolbar() {
               : 'Click source (parent) note'}
             <span className="ml-2 text-xs text-muted-foreground">
               (Click link to delete • Esc to cancel)
+            </span>
+          </div>
+        </>
+      )}
+      {ui.mode === 'resize' && (
+        <>
+          <div className="h-4 w-px bg-border" />
+          <div className="text-sm text-cyan-400 font-medium">
+            Select a note, then drag edges to resize
+            <span className="ml-2 text-xs text-muted-foreground">
+              (Esc to exit resize mode)
             </span>
           </div>
         </>

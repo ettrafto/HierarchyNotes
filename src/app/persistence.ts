@@ -3,6 +3,7 @@
 import type { BoardState } from '../lib/types';
 import { loadLayout, persistLayout } from './ipc';
 import { emitPersistOk, emitPersistFail } from './ipc';
+import { debug } from '../lib/debug';
 
 /**
  * Load the board state from disk via Rust backend
@@ -52,7 +53,7 @@ export async function loadBoardState(): Promise<BoardState | null> {
 
     return state as BoardState;
   } catch (error) {
-    console.error('Failed to load board state:', error);
+    debug.forceError('[Persistence] Failed to load board state:', error);
     return null;
   }
 }
@@ -65,7 +66,7 @@ export async function saveBoardState(boardState: BoardState): Promise<void> {
     await persistLayout({ boardState });
     emitPersistOk();
   } catch (error) {
-    console.error('Failed to save board state:', error);
+    debug.forceError('[Persistence] Failed to save board state:', error);
     emitPersistFail((error as Error)?.message);
   }
 }

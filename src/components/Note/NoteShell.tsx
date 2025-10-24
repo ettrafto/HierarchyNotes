@@ -7,6 +7,7 @@ import { useBoardStore } from '../../app/store';
 import { debounce } from '../../lib/utils';
 import { getFrameClasses, getTitlebarClasses, getGripClasses, getContentClasses, getCloseButtonClasses } from '../../lib/windowThemes';
 import type { NoteHydrateEvent } from '../../lib/types';
+import { debug } from '../../lib/debug';
 
 interface NoteShellProps {
   noteData: NoteHydrateEvent | null;
@@ -51,25 +52,25 @@ export default function NoteShell({ noteData }: NoteShellProps) {
 
   const handleClose = async () => {
     if (noteData) {
-      console.log('[NoteShell] 🔴 handleClose called for:', noteData.id);
+      debug.log('NOTE_SHELL', '[NoteShell] 🔴 handleClose called for:', noteData.id);
       try {
-        console.log('[NoteShell] Calling closeNoteWindow IPC...');
+        debug.log('NOTE_SHELL', '[NoteShell] Calling closeNoteWindow IPC...');
         await closeNoteWindow({ id: noteData.id });
-        console.log('[NoteShell] closeNoteWindow IPC completed');
+        debug.log('NOTE_SHELL', '[NoteShell] closeNoteWindow IPC completed');
       } catch (error) {
-        console.error('[NoteShell] Failed to close note window:', error);
+        debug.forceError('[NoteShell] Failed to close note window:', error);
       }
     } else {
-      console.warn('[NoteShell] handleClose called but no noteData!');
+      debug.warn('NOTE_SHELL', '[NoteShell] handleClose called but no noteData!');
     }
   };
 
   const handleTitlebarMouseDown = (e: React.MouseEvent) => {
-    console.log('[NoteShell] Titlebar mousedown - target:', e.target, 'currentTarget:', e.currentTarget);
+    debug.log('EVENTS', '[NoteShell] Titlebar mousedown - target:', e.target, 'currentTarget:', e.currentTarget);
     
     // Emit focus event to bring window to front on Board
     if (noteData) {
-      console.log('[NoteShell] Emitting focus event for:', noteData.id);
+      debug.log('NOTE_SHELL', '[NoteShell] Emitting focus event for:', noteData.id);
       emitNoteFocused({ id: noteData.id });
     }
     // Don't prevent default - let Tauri handle the drag
@@ -110,7 +111,7 @@ export default function NoteShell({ noteData }: NoteShellProps) {
           {/* Grip handle */}
           <div 
             className={getGripClasses(windowStyle)}
-            onClick={() => console.log('[NoteShell] Grip clicked')}
+            onClick={() => debug.log('EVENTS', '[NoteShell] Grip clicked')}
           />
           
           {/* Accent indicator */}
@@ -126,7 +127,7 @@ export default function NoteShell({ noteData }: NoteShellProps) {
             onChange={(e) => handleTitleChange(e.target.value)}
             className="flex-1 bg-transparent border-none outline-none text-sm font-medium truncate cursor-text no-drag"
             placeholder="Untitled Note"
-            onFocus={() => console.log('[NoteShell] Input focused')}
+            onFocus={() => debug.log('EVENTS', '[NoteShell] Input focused')}
           />
         </div>
 
@@ -136,7 +137,7 @@ export default function NoteShell({ noteData }: NoteShellProps) {
             type="button"
             aria-label="Close"
             onClick={() => {
-              console.log('[NoteShell] Close button clicked');
+              debug.log('EVENTS', '[NoteShell] Close button clicked');
               handleClose();
             }}
             className={[getCloseButtonClasses(windowStyle), 'no-drag'].join(' ')}

@@ -5,6 +5,7 @@ import { useBoardStore } from '../../app/store';
 import { useState } from 'react';
 import { toggleTheme, getTheme } from '../../app/theme';
 import { saveBoardState } from '../../app/persistence';
+import { debug } from '../../lib/debug';
 
 interface TopbarProps {
   onResetLayout: () => void;
@@ -25,7 +26,7 @@ export default function Topbar({ onResetLayout }: TopbarProps) {
 
   const handleSearch = () => {
     // TODO: Implement search functionality
-    console.log('Search not yet implemented');
+    debug.log('EVENTS', '[Topbar] Search not yet implemented');
   };
 
   return (
