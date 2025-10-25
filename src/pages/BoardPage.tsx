@@ -27,6 +27,7 @@ import { currentMonitor } from '@tauri-apps/api/window';
 import { spawnOverlay } from '../app/overlay';
 import { emitOverlayStateSync } from '../app/ipc';
 import { debug } from '../lib/debug';
+import CustomTitleBar from '../components/Board/CustomTitleBar';
 
 export default function BoardPage() {
   const initializeFromState = useBoardStore((state) => state.initializeFromState);
@@ -275,6 +276,7 @@ export default function BoardPage() {
 
   return (
     <div className="w-full h-full flex flex-col">
+      <CustomTitleBar />
       <Topbar onResetLayout={handleResetLayout} />
       <Toolbar />
       
