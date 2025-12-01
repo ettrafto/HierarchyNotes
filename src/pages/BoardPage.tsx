@@ -1,8 +1,8 @@
 // BoardPage - main board view with grid and link layer
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBoardStore, resizingViaBoard } from '../app/store';
-import { loadBoardState, saveBoardState, createSampleData } from '../app/persistence';
+import { hydrateFromDisk, saveBoardState, createSampleData } from '../app/persistence';
 import {
   onNoteMoved,
   onNoteResized,
@@ -23,11 +23,16 @@ import Toolbar from '../components/Board/Toolbar';
 import AutoSaveToast from '../components/Toasts/AutoSaveToast';
 import type { NoteWindow } from '../lib/types';
 import NotesList from '../components/Board/NotesList';
+import { ErrorBoundary } from '../components/Common/ErrorBoundary';
 import { currentMonitor } from '@tauri-apps/api/window';
 import { spawnOverlay } from '../app/overlay';
 import { emitOverlayStateSync } from '../app/ipc';
 import { debug } from '../lib/debug';
 import CustomTitleBar from '../components/Board/CustomTitleBar';
+import NoteEditModal from '../components/Board/NoteEditModal';
+import DeleteConfirmationModal from '../components/Board/DeleteConfirmationModal';
+import { spawn_test_window } from '../app/ipc';
+import { tInfo } from '../app/testBus';
 
 export default function BoardPage() {
   const initializeFromState = useBoardStore((state) => state.initializeFromState);
@@ -41,7 +46,7 @@ export default function BoardPage() {
   const showConnections = useBoardStore((state) => state.ui.windows.showConnections);
   const connectStyle = useBoardStore((state) => state.ui.connectStyle);
   const sidebarCollapsed = useBoardStore((state) => state.ui.sidebarCollapsed);
-  const allNotesArray = Object.values(notes);
+  const allNotesArray = useMemo(() => Object.values(notes), [notes]);
 
   // Autosave toast state
   const [persistStatus, setPersistStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
@@ -117,32 +122,24 @@ export default function BoardPage() {
   // Initialize board state on mount (only once)
   useEffect(() => {
     const initializeBoard = async () => {
-      
       debug.log('BOARD_PAGE', '[BoardPage] Initializing board...');
-      const savedState = await loadBoardState();
-      debug.log('BOARD_PAGE', '[BoardPage] Loaded state:', savedState);
-
-      const store = useBoardStore.getState();
-
-      if (savedState && Object.keys(savedState.notes).length > 0) {
-        debug.log('BOARD_PAGE', '[BoardPage] Loading saved state with', Object.keys(savedState.notes).length, 'notes');
-        
-        // Reset isOpen flag for all notes (windows aren't actually open on startup)
-        Object.values(savedState.notes).forEach(note => {
-          note.isOpen = false;
-        });
-        
-        store.initializeFromState(savedState);
-        // Do not auto-open on boot in this pass
-      } else {
-        // First run - create sample data
-        debug.log('BOARD_PAGE', '[BoardPage] No saved state, creating sample data');
+      
+      try {
+        const loaded = await hydrateFromDisk();
+        if (!loaded) {
+          throw new Error('No saved layout found');
+        }
+        const store = useBoardStore.getState();
+        store.initializeFromState(loaded);
+        debug.log('BOARD_PAGE', '[BoardPage] Board hydrated from disk');
+      } catch (error) {
+        debug.warn('BOARD_PAGE', '[BoardPage] Failed to hydrate from disk, creating sample data:', error);
         const sampleData = createSampleData();
-        debug.log('BOARD_PAGE', '[BoardPage] Sample data created with', Object.keys(sampleData.notes).length, 'notes');
+        const store = useBoardStore.getState();
         store.initializeFromState(sampleData);
         await saveBoardState(sampleData);
-        // Do not auto-open on first run in this pass
       }
+      
       debug.log('BOARD_PAGE', '[BoardPage] Initialization complete');
     };
 
@@ -216,7 +213,7 @@ export default function BoardPage() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
       // Escape to cancel connect or resize mode
       if (e.key === 'Escape') {
         const state = useBoardStore.getState();
@@ -245,6 +242,17 @@ export default function BoardPage() {
       if (e.key === 'g' && !e.metaKey && !e.ctrlKey && (e.target as HTMLElement).tagName !== 'INPUT' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
         e.preventDefault();
         useBoardStore.getState().toggleSnapToGrid();
+      }
+
+      // Ctrl+Shift+T for test output window
+      if (e.key.toLowerCase() === 't' && e.ctrlKey && e.shiftKey && !e.metaKey) {
+        e.preventDefault();
+        try {
+          await spawn_test_window();
+          tInfo("Opened Test Output window via keyboard shortcut (Ctrl+Shift+T).");
+        } catch (error) {
+          debug.forceError('[BoardPage] Failed to open test window:', error);
+        }
       }
 
       // Delete/Backspace for delete selected
@@ -283,7 +291,9 @@ export default function BoardPage() {
       <div className="flex flex-1 overflow-hidden">
         {!sidebarCollapsed && (
           <aside className="relative z-20">
-            <NotesList />
+            <ErrorBoundary>
+              <NotesList />
+            </ErrorBoundary>
           </aside>
         )}
         <main className="relative flex-1 overflow-hidden flex items-center justify-center bg-neutral-900">
@@ -320,6 +330,9 @@ export default function BoardPage() {
           </div>
         </main>
       </div>
+      
+      <NoteEditModal />
+      <DeleteConfirmationModal />
     </div>
   );
 }

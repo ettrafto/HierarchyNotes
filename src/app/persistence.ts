@@ -59,6 +59,14 @@ export async function loadBoardState(): Promise<BoardState | null> {
 }
 
 /**
+ * Convenience helper used by UI to fetch saved state.
+ * Returns the saved BoardState if available, otherwise null.
+ */
+export async function hydrateFromDisk(): Promise<BoardState | null> {
+  return await loadBoardState();
+}
+
+/**
  * Save the board state to disk via Rust backend
  */
 export async function saveBoardState(boardState: BoardState): Promise<void> {

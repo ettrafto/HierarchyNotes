@@ -1,11 +1,14 @@
 // Topbar component - main navigation and controls
 
-import { Plus, Search, Moon, Sun, RotateCcw, Save } from 'lucide-react';
+import { Plus, Search, Moon, Sun, RotateCcw, Save, Terminal, Play } from 'lucide-react';
 import { useBoardStore } from '../../app/store';
 import { useState } from 'react';
 import { toggleTheme, getTheme } from '../../app/theme';
 import { saveBoardState } from '../../app/persistence';
 import { debug } from '../../lib/debug';
+import { spawn_test_window } from '../../app/ipc';
+import { tInfo } from '../../app/testBus';
+import { runQuickTests } from '../../app/testRunner';
 
 interface TopbarProps {
   onResetLayout: () => void;
@@ -27,6 +30,25 @@ export default function Topbar({ onResetLayout }: TopbarProps) {
   const handleSearch = () => {
     // TODO: Implement search functionality
     debug.log('EVENTS', '[Topbar] Search not yet implemented');
+  };
+
+  const handleTestOutput = async () => {
+    try {
+      await spawn_test_window();
+      tInfo("Opened Test Output window from Topbar.");
+    } catch (error) {
+      debug.forceError('[Topbar] Failed to open test window:', error);
+    }
+  };
+
+  const handleRunTests = async () => {
+    try {
+      await spawn_test_window();
+      tInfo("Opened Test Output window and running tests...");
+      await runQuickTests();
+    } catch (error) {
+      debug.forceError('[Topbar] Failed to run tests:', error);
+    }
   };
 
   return (
@@ -53,6 +75,24 @@ export default function Topbar({ onResetLayout }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          onClick={handleTestOutput}
+          className="toolbar-button flex items-center gap-2"
+          title="Open Test Output (Ctrl+Shift+T)"
+        >
+          <Terminal size={16} />
+          <span>Test Output</span>
+        </button>
+
+        <button
+          onClick={handleRunTests}
+          className="toolbar-button flex items-center gap-2"
+          title="Run Tests"
+        >
+          <Play size={16} />
+          <span>Run Tests</span>
+        </button>
+
         <button
           onClick={() => saveBoardState(useBoardStore.getState())}
           className="toolbar-button flex items-center gap-2"

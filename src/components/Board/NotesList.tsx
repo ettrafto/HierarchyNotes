@@ -1,18 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useBoardStore } from '../../app/store';
-import ConfirmDialog from './ConfirmDialog';
 import { debug } from '../../lib/debug';
 
 export default function NotesList() {
-  const notes = useBoardStore((s) => s.notes);
+  // Select stable notes object; derive array via useMemo to avoid unstable snapshots
+  const notesObj = useBoardStore((s) => s.notes);
+  const notes = useMemo(() => Object.values(notesObj), [notesObj]);
   const toggleNoteWindow = useBoardStore((s) => s.toggleNoteWindow);
-  const deleteNote = useBoardStore((s) => s.deleteNote);
-  
-
-  const [confirm, setConfirm] = useState<{ open: boolean; id?: string }>({ open: false });
+  const openDeleteConfirmation = useBoardStore((s) => s.openDeleteConfirmation);
 
   const items = useMemo(() => {
-    const sorted = Object.values(notes).sort((a, b) => a.title.localeCompare(b.title));
+    const sorted = [...notes].sort((a, b) => a.title.localeCompare(b.title));
     debug.log('RENDER', '[NotesList] Rendering items:', sorted.map(n => ({
       id: n.id,
       title: n.title,
@@ -53,7 +51,7 @@ export default function NotesList() {
                 className="text-xs text-red-400 hover:text-red-300"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setConfirm({ open: true, id: n.id });
+                  openDeleteConfirmation(n.id, n.title, n.isOpen);
                 }}
               >
                 Delete
@@ -62,18 +60,6 @@ export default function NotesList() {
           </div>
         ))}
       </div>
-
-      <ConfirmDialog
-        open={confirm.open}
-        title="Delete note?"
-        description="This will permanently remove the note. You can undo for a few seconds."
-        onCancel={() => setConfirm({ open: false })}
-        onConfirm={async () => {
-          if (confirm.id) await deleteNote(confirm.id);
-          setConfirm({ open: false });
-          // No undo in this pass
-        }}
-      />
     </div>
   );
 }

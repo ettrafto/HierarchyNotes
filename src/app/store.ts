@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import { shallow } from 'zustand/shallow';
 import { nanoid } from 'nanoid';
 import type { BoardState, NoteWindow, Link, NoteRect, ID, UIMode, ConnectStyle, WindowStyle } from '../lib/types';
 import { saveBoardState } from './persistence';
@@ -16,6 +17,10 @@ interface LinkingDraft {
 interface BoardStoreState extends BoardState {
   linkingDraft: LinkingDraft;
   
+  // Modal state
+  uiModalEditNote: { id: string } | null;
+  uiDeleteConfirmation: { noteId: string; noteTitle: string; noteIsOpen: boolean } | null;
+  
   // Actions
   createNote: (rect?: Partial<NoteRect>) => Promise<void>;
   renameNote: (id: ID, title: string) => void;
@@ -25,11 +30,19 @@ interface BoardStoreState extends BoardState {
   updateNoteRect: (id: ID, rect: NoteRect) => void;
   updateNoteContent: (id: ID, updates: { title?: string; content?: string }) => void;
   updateNoteWindow: (id: ID, updates: Partial<NoteWindow>) => void;
+  updateNote: (id: ID, updates: Partial<NoteWindow>) => void;
   deleteNote: (id: ID) => Promise<void>;
   undoDelete: () => Promise<void>;
   markNoteClosedFromOS: (id: ID) => void;
   setNoteOpen: (id: ID, isOpen: boolean) => void;
   bringNoteToFront: (id: ID) => void;
+  
+  // Modal actions
+  openEditModal: (id: ID) => void;
+  closeEditModal: () => void;
+  openDeleteConfirmation: (noteId: ID, noteTitle: string, noteIsOpen: boolean) => void;
+  closeDeleteConfirmation: () => void;
+  confirmDelete: (noteId: ID) => Promise<void>;
 
   // Link actions (new)
   startConnect: (sourceNoteId: ID) => void;
@@ -110,6 +123,8 @@ export const useBoardStore = create<BoardStoreState>()(
     },
     dragEchoBlock: {},
     linkingDraft: { sourceNoteId: null },
+    uiModalEditNote: null,
+    uiDeleteConfirmation: null,
 
     // Note actions
     createNote: async (rectOverrides = {}) => {
@@ -287,6 +302,15 @@ export const useBoardStore = create<BoardStoreState>()(
       debouncedPersist(get());
     },
 
+    updateNote: (id: ID, updates: Partial<NoteWindow>) => {
+      set((state) => {
+        if (state.notes[id]) {
+          Object.assign(state.notes[id], updates);
+        }
+      });
+      debouncedPersist(get());
+    },
+
     toggleNoteHidden: (id: ID) => {
       set((state) => {
         if (state.notes[id]) {
@@ -328,6 +352,36 @@ export const useBoardStore = create<BoardStoreState>()(
       });
 
       debouncedPersist(get());
+    },
+
+    // Modal actions
+    openEditModal: (id: ID) => {
+      set((state) => {
+        state.uiModalEditNote = { id };
+      });
+    },
+
+    closeEditModal: () => {
+      set((state) => {
+        state.uiModalEditNote = null;
+      });
+    },
+
+    // Delete confirmation actions
+    openDeleteConfirmation: (noteId: ID, noteTitle: string, noteIsOpen: boolean) => {
+      set((state) => {
+        state.uiDeleteConfirmation = { noteId, noteTitle, noteIsOpen };
+      });
+    },
+
+    closeDeleteConfirmation: () => {
+      set((state) => {
+        state.uiDeleteConfirmation = null;
+      });
+    },
+
+    confirmDelete: async (noteId: ID) => {
+      await get().deleteNote(noteId);
     },
 
     undoDelete: async () => {
@@ -653,7 +707,29 @@ export const useBoardStore = create<BoardStoreState>()(
 
     // State management
     initializeFromState: (state: BoardState) => {
-      set(() => state);
+      // Only replace data slices; keep actions and transient fields intact
+      set((draft) => {
+        (draft as any).notes = state.notes ?? {};
+        (draft as any).links = state.links ?? {};
+        // Preserve existing UI keys; merge in provided UI
+        const defaultUi = {
+          mode: 'select' as UIMode,
+          snapToGrid: true,
+          connectStyle: 'smooth' as ConnectStyle,
+          selectedNoteIds: [] as ID[],
+          selectedLinkIds: [] as ID[],
+          gridDensity: 40,
+          focusedNoteId: null as ID | null,
+          trash: {} as Record<string, any>,
+          sidebarCollapsed: false,
+          windows: {
+            showConnections: true,
+            style: (draft as any).ui?.windows?.style ?? 'glass',
+          } as any,
+          resizeDrafts: {},
+        };
+        (draft as any).ui = { ...defaultUi, ...(state.ui ?? {}) } as any;
+      });
     },
 
     resetToSampleLayout: () => {
@@ -685,3 +761,8 @@ export const selectNoteById = (id: ID) => useBoardStore.getState().notes[id];
 export const persistNow = async () => {
   await saveBoardState(useBoardStore.getState());
 };
+// Hook for components expecting an array of notes
+// Important: returns a new array but uses shallow equality so React does not
+// treat identical snapshots (same item identities/order) as changes. Avoids
+// the getSnapshot caching warning and render loops when consumers sort/copy.
+export const useNotesArray = () => useBoardStore((s) => Object.values(s.notes), shallow);

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for main, note, and overlay windows",
-  "windows": ["main", "note-*", "overlay"],
+  "windows": ["main", "note-*", "overlay", "test-console"],
   "permissions": [
     "core:default",
     "opener:default",

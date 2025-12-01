@@ -37,6 +37,25 @@ fn get_layout_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_dir.join("layout.json"))
 }
 
+/// Spawn the test output window
+#[tauri::command]
+async fn spawn_test_window(app: AppHandle) -> Result<(), String> {
+    let label = "test-console";
+    if app.get_webview_window(label).is_none() {
+        WebviewWindowBuilder::new(&app, label, WebviewUrl::App("test.html".into()))
+            .title("HierarchyNotes — Test Output")
+            .resizable(true)
+            .inner_size(900.0, 640.0)
+            .visible(true)
+            .build()
+            .map_err(|e| e.to_string())?;
+    } else {
+        // focus if already exists
+        let _ = app.get_webview_window(label).unwrap().set_focus();
+    }
+    Ok(())
+}
+
 /// Spawn a new note window
 #[tauri::command]
 async fn spawn_note_window(app: AppHandle, id: String, rect: NoteRect) -> Result<(), String> {
@@ -257,6 +276,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            spawn_test_window,
             spawn_note_window,
             spawn_overlay_window,
             focus_note_window,

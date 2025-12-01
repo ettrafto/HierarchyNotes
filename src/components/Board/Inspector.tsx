@@ -9,7 +9,7 @@ export default function Inspector() {
   const selectedLinkIds = useBoardStore((state) => state.ui.selectedLinkIds);
   const links = useBoardStore((state) => state.links);
   const clearSelection = useBoardStore((state) => state.clearSelection);
-  const deleteNote = useBoardStore((state) => state.deleteNote);
+  const openDeleteConfirmation = useBoardStore((state) => state.openDeleteConfirmation);
   const deleteLink = useBoardStore((state) => state.deleteLink);
   const updateNoteWindow = useBoardStore((state) => state.updateNoteWindow);
 
@@ -17,8 +17,11 @@ export default function Inspector() {
     return null;
   }
 
-  const handleDeleteNote = async (id: string) => {
-    await deleteNote(id);
+  const handleDeleteNote = (id: string) => {
+    const note = notes[id];
+    if (note) {
+      openDeleteConfirmation(id, note.title, note.isOpen);
+    }
   };
 
   const handleDeleteLink = (id: string) => {

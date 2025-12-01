@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from 'react';
 import { useBoardStore } from '../../app/store';
 import { setNotePosition } from '../../app/ipc';
 import { debug } from '../../lib/debug';
+import { useContextMenu } from './useContextMenu';
+import NoteContextMenu from './NoteContextMenu';
 
 export default function NoteGhosts({ scale }: { scale: number }) {
   const notesRecord = useBoardStore((s) => s.notes);
@@ -51,6 +53,9 @@ function Ghost({ noteId, title, rect, isOpen, isActive, scale }: { noteId: strin
   const dragging = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
   const didDrag = useRef(false);
+  
+  // Context menu hook
+  const { isOpen: isContextMenuOpen, pos, noteId: contextNoteId, open: openContextMenu, close: closeContextMenu, menuRef } = useContextMenu();
   
   // Get connect mode state
   const mode = useBoardStore((s) => s.ui.mode);
@@ -221,17 +226,24 @@ function Ghost({ noteId, title, rect, isOpen, isActive, scale }: { noteId: strin
     userSelect: 'none',
   };
 
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    openContextMenu(e, noteId);
+  };
+
   return (
-    <div
-      style={style}
-      title={`Ghost: ${title}`}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      onPointerLeave={onPointerLeave}
-      onClick={onClick}
-    >
+    <>
+      <div
+        style={style}
+        title={`Ghost: ${title}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onPointerLeave={onPointerLeave}
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+      >
       <div
         className="px-1 py-0.5 select-none truncate"
         style={{
@@ -258,7 +270,17 @@ function Ghost({ noteId, title, rect, isOpen, isActive, scale }: { noteId: strin
           {(rect as any).content ? String((rect as any).content).slice(0, 160) : ''}
         </div>
       )}
-    </div>
+      </div>
+      
+      <NoteContextMenu
+        isOpen={isContextMenuOpen}
+        x={pos.x}
+        y={pos.y}
+        noteId={contextNoteId}
+        menuRef={menuRef}
+        onClose={closeContextMenu}
+      />
+    </>
   );
 }
 

@@ -26,6 +26,7 @@ import { debug } from '../lib/debug';
 export const IPC_EVENTS = {
   // Board -> Rust
   SPAWN_NOTE: 'spawn_note_window',
+  SPAWN_TEST: 'spawn_test_window',
   FOCUS_NOTE: 'focus_note_window',
   CLOSE_NOTE: 'close_note_window',
   PERSIST_LAYOUT: 'persist_layout',
@@ -68,6 +69,16 @@ export async function spawnNoteWindow(payload: SpawnNotePayload): Promise<void> 
     debug.log('IPC', '[IPC] spawnNoteWindow completed for:', payload.id);
   } catch (error) {
     debug.forceError('[IPC] Failed to spawn note window:', error);
+    throw error;
+  }
+}
+
+export async function spawn_test_window(): Promise<void> {
+  try {
+    await invoke('spawn_test_window');
+    debug.log('IPC', '[IPC] spawn_test_window completed');
+  } catch (error) {
+    debug.forceError('[IPC] Failed to spawn test window:', error);
     throw error;
   }
 }
